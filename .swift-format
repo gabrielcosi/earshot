@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "indentation": {
+    "spaces": 4
+  },
+  "lineLength": 100,
+  "maximumBlankLines": 1,
+  "respectsExistingLineBreaks": true,
+  "reflowMultilineStringLiterals": "never",
+  "rules": {
+    "AllPublicDeclarationsHaveDocumentation": false,
+    "BeginDocumentationCommentWithOneLineSummary": false,
+    "NeverForceUnwrap": true,
+    "NeverUseForceTry": true,
+    "NoBlockComments": true,
+    "OrderedImports": true,
+    "UseEarlyExits": true,
+    "ValidateDocumentationComments": true
+  }
+}

@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+.swiftpm/
+/build/
+/.deps/
+/models/
+xcuserdata/
+/.mise/config.local.toml
+/.deps-build.log

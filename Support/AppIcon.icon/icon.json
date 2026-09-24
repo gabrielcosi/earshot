@@ -1,0 +1,35 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.08235,0.31373,0.35294,1.00000",
+      "srgb:0.03922,0.16863,0.19216,1.00000"
+    ]
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "ear.svg",
+          "name": "ear",
+          "glass": true
+        },
+        {
+          "image-name": "levels.svg",
+          "name": "levels",
+          "glass": true
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.3
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": ["macOS"]
+  }
+}

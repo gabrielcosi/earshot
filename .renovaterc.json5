@@ -1,0 +1,43 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  // No CI runs here: nothing merges on its own. Check out each PR and run `mise run verify`.
+  extends: ["config:recommended", ":semanticCommits", ":timezone(Europe/Berlin)"],
+  assignees: ["@gabrielcosi"],
+  "git-submodules": { enabled: true },
+  customManagers: [
+    {
+      description: "Libraries the mise tasks build into .deps, pinned by tag and commit",
+      customType: "regex",
+      managerFilePatterns: ["/^\\.mise/config\\.toml$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( registryUrl=(?<registryUrl>\\S+))?\\nversion=(?<currentValue>\\S+)",
+      ],
+    },
+  ],
+  packageRules: [
+    {
+      description: "Development tools never reach the app; one PR a month",
+      matchManagers: ["mise"],
+      groupName: "development tools",
+      schedule: ["* * 1 * *"],
+      semanticCommitType: "build",
+    },
+    {
+      description: "Sparkle ships inside the app and installs every update",
+      matchManagers: ["swift"],
+      semanticCommitType: "fix",
+    },
+    {
+      description: "The echo canceller ships inside the app; the commit pin next to the version is updated by hand",
+      matchManagers: ["custom.regex"],
+      semanticCommitType: "fix",
+    },
+    {
+      description: "The engine has no releases; follow its main branch weekly",
+      matchManagers: ["git-submodules"],
+      schedule: ["* * * * 1"],
+      semanticCommitType: "fix",
+      commitMessageTopic: "NeMo-Speech.cpp",
+    },
+  ],
+}

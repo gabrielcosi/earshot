@@ -1,0 +1,321 @@
+[tools]
+cmake = "4.4.3"
+lefthook = "2.1.14"
+ninja = "1.13.2"
+"pipx:meson" = "1.12.1"
+oxfmt = "0.70.0"
+periphery = "3.8.0"
+swiftlint = "0.65.1"
+uv = "0.12.18"
+xcbeautify = "3.2.1"
+
+[env]
+EARSHOT_ENGINE = "{{config_root}}/vendor/NeMo-Speech.cpp"
+EARSHOT_DEPS = "{{config_root}}/.deps"
+NEMO_SPEECH_MODEL_DIR = "{{config_root}}/models"
+# The Nemotron 3.5 file the app uses (ModelCatalog.overrides), for `serve` and the live tests.
+EARSHOT_ASR_MODEL = "{{config_root}}/models/nvidia/nemotron-3.5-asr-streaming-0.6b/ea30d66debe3740a08b573244286791d423d6b3e/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"
+EARSHOT_APP = "{{config_root}}/build/Earshot.app"
+EARSHOT_RELEASES = "{{config_root}}/build/releases"
+EARSHOT_NOTARY_PROFILE = "earshot"
+_.path = [
+  "{{config_root}}/.deps/engine/bin",
+  "{{config_root}}/.build/artifacts/sparkle/Sparkle/bin",
+]
+
+[settings]
+unix_default_inline_shell_args = "bash -c -o errexit -o pipefail -o nounset"
+
+[tasks."engine:sentencepiece"]
+description = "Build static SentencePiece into .deps (pinned to the engine's commit)"
+sources = ["vendor/NeMo-Speech.cpp/scripts/build_sentencepiece_static.sh"]
+outputs = [".deps/sentencepiece/lib/libsentencepiece.a"]
+run = '''
+commit=$(sed -n 's/^COMMIT=//p' "$EARSHOT_ENGINE/scripts/build_sentencepiece_static.sh")
+src="$EARSHOT_DEPS/src/sentencepiece"
+[ -d "$src/.git" ] || git clone --filter=blob:none --no-checkout https://github.com/google/sentencepiece.git "$src"
+git -C "$src" fetch --depth 1 origin "$commit"
+git -C "$src" checkout --quiet "$commit"
+cmake -G Ninja -S "$src" -B "$EARSHOT_DEPS/build/sentencepiece" \
+  -DCMAKE_BUILD_TYPE=Release -DSPM_BUILD_TEST=OFF -DSPM_ENABLE_SHARED=OFF -DSPM_ENABLE_TCMALLOC=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+cmake --build "$EARSHOT_DEPS/build/sentencepiece" --target sentencepiece-static
+mkdir -p "$EARSHOT_DEPS/sentencepiece/lib" "$EARSHOT_DEPS/sentencepiece/include"
+cp "$EARSHOT_DEPS/build/sentencepiece/src/libsentencepiece.a" "$EARSHOT_DEPS/sentencepiece/lib/"
+cp "$src/src/sentencepiece_processor.h" "$EARSHOT_DEPS/sentencepiece/include/"
+'''
+
+[tasks."engine:aec"]
+description = "Build webrtc-audio-processing (WebRTC AEC3) with its abseil into one static library in .deps"
+sources = [".mise/config.toml"]
+outputs = [".deps/webrtc-audio-processing/lib/libwebrtc-audio-processing-2.a"]
+run = '''
+# renovate: datasource=gitlab-tags depName=pulseaudio/webrtc-audio-processing registryUrl=https://gitlab.freedesktop.org
+version=v2.1
+# The commit the tag pointed at when it was pinned; a moved tag fails the check below.
+commit=846fe90a289f58b7c9303a635142aa2c7caa93e5
+src="$EARSHOT_DEPS/src/webrtc-audio-processing"
+build="$EARSHOT_DEPS/build/webrtc-audio-processing"
+prefix="$EARSHOT_DEPS/webrtc-audio-processing"
+[ -d "$src/.git" ] || git clone --filter=blob:none --no-checkout \
+  https://gitlab.freedesktop.org/pulseaudio/webrtc-audio-processing.git "$src"
+git -C "$src" fetch --depth 1 origin "refs/tags/$version:refs/tags/$version"
+[ "$(git -C "$src" rev-parse "$version^{commit}")" = "$commit" ] ||
+  { echo "$version no longer points at $commit" >&2; exit 1; }
+git -C "$src" checkout --quiet "$commit"
+# abseil appears in the library's headers, so the app links it too. The wrap builds the version
+# the library was released against; a Homebrew abseil on the same Mac would otherwise be picked
+# up through pkg-config and change with every brew upgrade. Without pkg-config there is nothing
+# to pick up, and the log check catches any other way in.
+rm -rf "$build"
+# Package.swift's platform; the linker refuses objects built for a newer macOS.
+export MACOSX_DEPLOYMENT_TARGET=26.4
+PKG_CONFIG=/usr/bin/false meson setup "$build" "$src" \
+  --buildtype=release --default-library=static --prefix="$prefix" --libdir=lib \
+  --force-fallback-for=abseil-cpp
+if grep -q -- "/opt/homebrew\|/usr/local" "$build/meson-logs/meson-log.txt"; then
+  echo "the build found a library outside the repository; see $build/meson-logs/meson-log.txt" >&2
+  exit 1
+fi
+meson compile -C "$build"
+rm -rf "$prefix"
+meson install -C "$build"
+lib="$build/webrtc/modules/audio_processing/libwebrtc-audio-processing-2.a"
+[ -f "$lib" ] || { echo "$lib was not built" >&2; exit 1; }
+libtool -static -o "$prefix/lib/libwebrtc-audio-processing-2.a" \
+  "$lib" "$build"/subprojects/abseil-cpp-*/libabsl_*.a 2>&1 | grep -v "has no symbols" || true
+# The subproject installs nothing, and the library's own headers include abseil's.
+rsync -a --include='*/' --include='*.h' --include='*.inc' --exclude='*' \
+  "$src"/subprojects/abseil-cpp-*/absl "$prefix/include/webrtc-audio-processing-2/"
+'''
+
+[tasks."engine:build"]
+description = "Build the nemo-speech server (Metal, ASR + diarization + HTTP) into .deps/engine"
+depends = ["engine:sentencepiece", "engine:aec"]
+run = '''
+cd "$EARSHOT_ENGINE"
+git submodule update --init ggml third_party/cpp-httplib llama.cpp
+scripts/configure.sh metal-asr \
+  -DNEMO_SPEECH_BUILD_HTTP=ON \
+  -DNEMO_SPEECH_BUILD_TTS=OFF \
+  -DSENTENCEPIECE_LIB="$EARSHOT_DEPS/sentencepiece/lib/libsentencepiece.a" \
+  -DSENTENCEPIECE_INCLUDE_DIR="$EARSHOT_DEPS/sentencepiece/include" \
+  -DCMAKE_INSTALL_PREFIX="$EARSHOT_DEPS/engine"
+cmake --build --preset metal-asr
+cmake --install build/metal-asr
+'''
+
+[tasks."engine:models"]
+description = "Download the ASR and diarization GGUFs into ./models, at the revisions the app uses"
+run = '''
+mkdir -p "$(dirname "$EARSHOT_ASR_MODEL")"
+[ -f "$EARSHOT_ASR_MODEL" ] || curl -fL -o "$EARSHOT_ASR_MODEL" \
+  "https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/resolve/ea30d66debe3740a08b573244286791d423d6b3e/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf"
+echo "3fc991d3badad7277c11030a7519832cddaf2057aafed6d4b25147e953a070b1  $EARSHOT_ASR_MODEL" | shasum -a 256 -c -
+nemo-speech pull nvidia/Nemotron-3-Diarization
+'''
+
+[tasks.serve]
+description = "Run the local speech server on 127.0.0.1:8765"
+run = 'nemo-speech serve --config config/server.yaml --asr-model "$EARSHOT_ASR_MODEL"'
+
+[tasks.fmt]
+description = "Format Swift sources in place"
+run = "swift format --in-place --recursive --parallel Sources Tests Package.swift"
+
+[tasks.lint]
+description = "Check formatting and lint rules without modifying anything"
+run = [
+  "swift format lint --strict --recursive --parallel Sources Tests Package.swift",
+  "swiftlint lint --quiet --strict",
+]
+
+[tasks.test]
+description = "Run the hermetic test suite (no engine)"
+run = "swift test"
+
+[tasks.test-live]
+description = "Run live tests against the engine started by `mise run serve`"
+env = { EARSHOT_LIVE = "1" }
+run = "swift test --filter Live"
+
+[tasks.test-capture]
+description = "Capture this Mac's audio through the real process tap (plays sound; needs audio-capture permission)"
+env = { EARSHOT_CAPTURE = "1" }
+run = "swift test --filter SystemCapture"
+
+[tasks.dead-code]
+description = "Fail on unused declarations (Periphery reads the native build system's index store)"
+run = "periphery scan --quiet --disable-update-check --strict --retain-codable-properties -- --build-system native"
+
+[tasks.fixtures]
+description = "Regenerate the live-test audio clips with macOS voices"
+run = "scripts/fixtures.sh"
+
+[tasks.build]
+description = "Build Earshot.app into ./build"
+usage = """
+flag "--version <version>" default="0.0.0" help="CFBundleShortVersionString"
+flag "--build <build>" default="0" help="CFBundleVersion; Sparkle orders updates by it"
+flag "--identity <identity>" env="EARSHOT_SIGN_IDENTITY" default="-" help="Signing identity; - signs ad hoc"
+"""
+run = """
+[ -x "$EARSHOT_DEPS/engine/bin/nemo-speech" ] || { echo "engine missing: run mise run engine:build" >&2; exit 1; }
+swift build -c release --product Earshot
+
+contents="$EARSHOT_APP/Contents"
+rm -rf "$EARSHOT_APP"
+mkdir -p "$contents/MacOS" "$contents/Resources" "$contents/Frameworks"
+cp "$(swift build -c release --show-bin-path)/Earshot" "$contents/MacOS/"
+cp Support/Info.plist "$contents/"
+plutil -replace CFBundleShortVersionString -string "$usage_version" "$contents/Info.plist"
+plutil -replace CFBundleVersion -string "$usage_build" "$contents/Info.plist"
+cp config/server.yaml Support/MenuBarIcon.svg Support/MenuBarRecording.svg "$contents/Resources/"
+cp "$EARSHOT_ENGINE/models/index.json" "$contents/Resources/model-index.json"
+xcrun actool Support/AppIcon.icon --compile "$contents/Resources" --platform macosx \
+  --minimum-deployment-target 26.4 --app-icon AppIcon \
+  --output-partial-info-plist "$(mktemp -d)/AppIcon.plist" >/dev/null
+# The engine loads its libraries from @loader_path/../lib, so the layout moves unchanged.
+ditto "$EARSHOT_DEPS/engine/bin/nemo-speech" "$contents/Helpers/nemo-speech/bin/nemo-speech"
+mkdir -p "$contents/Helpers/nemo-speech/lib"
+cp -a "$EARSHOT_DEPS/engine/lib/"*.dylib "$contents/Helpers/nemo-speech/lib/"
+ditto .build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework \
+  "$contents/Frameworks/Sparkle.framework"
+
+# Licenses of everything the bundle carries; MIT, BSD, and Apache all ask for their text to
+# travel with a binary. The engine's notices name the texts copied next to them.
+licenses="$contents/Resources/Licenses"
+mkdir -p "$licenses"
+cp LICENSE "$licenses/Earshot.txt"
+cp THIRD_PARTY_NOTICES.md "$licenses/Third-party notices.md"
+cp "$EARSHOT_ENGINE/LICENSE" "$licenses/NeMo-Speech.cpp.txt"
+cp "$EARSHOT_ENGINE/NOTICE" "$licenses/NeMo-Speech.cpp NOTICE.txt"
+cp "$EARSHOT_ENGINE/THIRD_PARTY_NOTICES.md" "$licenses/NeMo-Speech.cpp third-party notices.md"
+cp "$EARSHOT_ENGINE/ggml/LICENSE" "$licenses/ggml.txt"
+cp "$EARSHOT_ENGINE/third_party/cpp-httplib/LICENSE" "$licenses/cpp-httplib.txt"
+cp "$EARSHOT_DEPS/src/sentencepiece/LICENSE" "$licenses/SentencePiece.txt"
+cp .build/artifacts/sparkle/Sparkle/LICENSE "$licenses/Sparkle.txt"
+cp "$EARSHOT_DEPS/src/webrtc-audio-processing/COPYING" "$licenses/webrtc-audio-processing.txt"
+cp "$EARSHOT_DEPS"/src/webrtc-audio-processing/subprojects/abseil-cpp-*/LICENSE "$licenses/Abseil.txt"
+
+# Nested code is signed inside-out. The engine inherits the app's sandbox, so it carries only
+# app-sandbox and inherit: macOS kills an inheriting helper that declares anything else.
+# Hardened runtime needs a real identity: ad hoc, library validation refuses Sparkle.
+runtime=()
+[ "$usage_identity" = - ] || runtime=(--options runtime)
+sign() { codesign --force --sign "$usage_identity" ${runtime[@]+"${runtime[@]}"} "$@"; }
+find "$contents/Helpers" -name '*.dylib' -type f | while read -r lib; do sign "$lib"; done
+sign --entitlements Support/Engine.entitlements "$contents/Helpers/nemo-speech/bin/nemo-speech"
+sparkle="$contents/Frameworks/Sparkle.framework/Versions/B"
+sign "$sparkle/XPCServices/Installer.xpc"
+sign --preserve-metadata=entitlements "$sparkle/XPCServices/Downloader.xpc"
+sign "$sparkle/Autoupdate"
+sign "$sparkle/Updater.app"
+sign "$contents/Frameworks/Sparkle.framework"
+sign --entitlements Support/Earshot.entitlements "$EARSHOT_APP"
+codesign --verify --deep --strict "$EARSHOT_APP"
+"""
+
+[tasks.notarize]
+description = "Notarize and staple an app or DMG with the notarytool profile in EARSHOT_NOTARY_PROFILE"
+usage = 'arg "<path>"'
+run = """
+upload="$usage_path"
+if [ -d "$usage_path" ]; then
+  upload="$(mktemp -d)/upload.zip"
+  ditto -c -k --keepParent "$usage_path" "$upload"
+fi
+xcrun notarytool submit "$upload" --keychain-profile "$EARSHOT_NOTARY_PROFILE" --wait
+xcrun stapler staple "$usage_path"
+"""
+
+[tasks.release]
+description = "Build a notarized DMG into build/releases and add it to the Sparkle appcast"
+usage = """
+arg "<version>" help="e.g. 0.2.0"
+flag "--identity <identity>" env="EARSHOT_RELEASE_IDENTITY" required=#true help="Developer ID Application identity"
+flag "--rehearse" help="Skip notarization, to try the release with a development identity"
+"""
+run = """
+[ -z "$(git status --porcelain --untracked-files=no --ignore-submodules=dirty)" ] ||
+  { echo "commit first: a release must match a commit" >&2; exit 1; }
+notarize() { [ "${usage_rehearse:-false}" = true ] || mise run notarize "$1"; }
+dmg="$EARSHOT_RELEASES/Earshot-$usage_version.dmg"
+repo=https://github.com/gabrielcosi/earshot
+
+# Sparkle orders updates by CFBundleVersion, which grows with every commit on main.
+mise run build --version "$usage_version" --build "$(git rev-list --count HEAD)" --identity "$usage_identity"
+# The app gets its own ticket so it passes Gatekeeper offline after Sparkle unpacks an update.
+notarize "$EARSHOT_APP"
+
+staging="$(mktemp -d)"
+ditto "$EARSHOT_APP" "$staging/Earshot.app"
+ln -s /Applications "$staging/Applications"
+mkdir -p "$EARSHOT_RELEASES"
+rm -f "$dmg"
+hdiutil create -volname Earshot -srcfolder "$staging" -format UDZO -quiet "$dmg"
+codesign --force --sign "$usage_identity" "$dmg"
+notarize "$dmg"
+
+# Start from the published feed so earlier releases stay in it on any machine.
+curl -fsSL -o "$EARSHOT_RELEASES/appcast.xml" "$repo/releases/latest/download/appcast.xml" ||
+  echo "no published appcast yet; starting a new one"
+[ ! -f "docs/releases/$usage_version.md" ] ||
+  cp "docs/releases/$usage_version.md" "$EARSHOT_RELEASES/Earshot-$usage_version.md"
+generate_appcast --account earshot --embed-release-notes \
+  --download-url-prefix "$repo/releases/download/v$usage_version/" \
+  --full-release-notes-url "$repo/releases/tag/v$usage_version" "$EARSHOT_RELEASES"
+"""
+
+[tasks.publish]
+description = "Tag a release built by `mise run release` and publish it on GitHub with the appcast"
+usage = 'arg "<version>"'
+run = """
+dmg="$EARSHOT_RELEASES/Earshot-$usage_version.dmg"
+tag="v$usage_version"
+xcrun stapler validate -q "$dmg" || { echo "$dmg is not notarized; other Macs would refuse it" >&2; exit 1; }
+# The tag goes to Forgejo; its push mirror carries it to GitHub.
+git tag "$tag"
+git push origin "$tag"
+until gh api "repos/gabrielcosi/earshot/git/ref/tags/$tag" >/dev/null 2>&1; do
+  echo "waiting for the mirror to push $tag to GitHub…"
+  sleep 5
+done
+notes=(--generate-notes)
+[ ! -f "docs/releases/$usage_version.md" ] || notes=(--notes-file "docs/releases/$usage_version.md")
+# Every release carries the appcast, so releases/latest/download/appcast.xml is always current.
+gh release create "$tag" --repo gabrielcosi/earshot --verify-tag --title "Earshot $usage_version" \
+  "${notes[@]}" "$dmg" "$EARSHOT_RELEASES/appcast.xml"
+"""
+
+[tasks.run]
+description = "Build and launch Earshot.app"
+depends = ["build"]
+run = "open build/Earshot.app"
+
+[tasks.check]
+description = "Everything that gates a change"
+depends = ["lint", "test", "dead-code"]
+
+[tasks.verify]
+description = "What CI would run, for dependency updates: check, a fresh engine build, and the live tests against it"
+depends = ["check", "engine:build", "engine:models"]
+run = '''
+if curl -fs -o /dev/null http://127.0.0.1:8765/ready; then
+  echo "an engine already listens on 8765: quit Earshot and stop mise run serve first" >&2
+  exit 1
+fi
+log="$EARSHOT_DEPS/verify-engine.log"
+nemo-speech serve --config config/server.yaml --asr-model "$EARSHOT_ASR_MODEL" >"$log" 2>&1 &
+engine=$!
+trap 'kill $engine 2>/dev/null; wait $engine 2>/dev/null' EXIT
+for _ in $(seq 120); do
+  curl -fs -o /dev/null http://127.0.0.1:8765/ready && break
+  kill -0 $engine 2>/dev/null || { cat "$log" >&2; exit 1; }
+  sleep 0.5
+done
+EARSHOT_LIVE=1 swift test --filter Live
+echo "verified; the engine log is in $log"
+'''
+
+[hooks]
+postinstall = "lefthook install"

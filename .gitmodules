@@ -1,0 +1,3 @@
+[submodule "vendor/NeMo-Speech.cpp"]
+	path = vendor/NeMo-Speech.cpp
+	url = https://github.com/NVIDIA/NeMo-Speech.cpp

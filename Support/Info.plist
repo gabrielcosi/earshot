@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.gabrielcosi.earshot</string>
+	<key>CFBundleName</key>
+	<string>Earshot</string>
+	<key>CFBundleExecutable</key>
+	<string>Earshot</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.4</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Earshot transcribes what you say.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Earshot transcribes what your Mac plays, such as the other side of a call.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/gabrielcosi/earshot/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>skyXaLEa05J/9fG1nJRRLvuHGu7SKvIb57APuRTCPHU=</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>EarshotServerURL</key>
+	<string>http://127.0.0.1:8765/</string>
+</dict>
+</plist>
