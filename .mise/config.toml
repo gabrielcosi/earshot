@@ -256,7 +256,9 @@ hdiutil create -volname Earshot -srcfolder "$staging" -format UDZO -quiet "$dmg"
 codesign --force --sign "$usage_identity" "$dmg"
 notarize "$dmg"
 
-# Start from the published feed so earlier releases stay in it on any machine.
+# Start from the published feed so earlier releases stay in it on any machine, and never from a
+# local feed a rehearsal left behind.
+rm -f "$EARSHOT_RELEASES/appcast.xml"
 curl -fsSL -o "$EARSHOT_RELEASES/appcast.xml" "$repo/releases/latest/download/appcast.xml" ||
   echo "no published appcast yet; starting a new one"
 [ ! -f "docs/releases/$usage_version.md" ] ||
