@@ -276,7 +276,7 @@ dmg="$EARSHOT_RELEASES/Earshot-$usage_version.dmg"
 tag="v$usage_version"
 xcrun stapler validate -q "$dmg" || { echo "$dmg is not notarized; other Macs would refuse it" >&2; exit 1; }
 # The tag goes to Forgejo; its push mirror carries it to GitHub.
-git tag "$tag"
+git tag -m "Earshot $usage_version" "$tag"
 git push origin "$tag"
 until gh api "repos/gabrielcosi/earshot/git/ref/tags/$tag" >/dev/null 2>&1; do
   echo "waiting for the mirror to push $tag to GitHub…"
