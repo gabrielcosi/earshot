@@ -51,6 +51,8 @@ struct MainWindow: View {
                 controller.downloadFailed(from: source, to: target, error)
             }
         }
+        .onAppear { controller.preferences.mainWindowOpen = true }
+        .onDisappear { controller.preferences.mainWindowOpen = false }
     }
 }
 

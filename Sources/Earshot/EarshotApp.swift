@@ -33,6 +33,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let navigation = Navigation()
     let updater = Updater()
 
+    /// A second copy would delete the recordings of the first one's session as it launched.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        guard let id = Bundle.main.bundleIdentifier,
+            NSRunningApplication.runningApplications(withBundleIdentifier: id)
+                .contains(where: { $0 != .current })
+        else { return }
+        let alert = NSAlert()
+        alert.messageText = "Earshot is already running"
+        alert.informativeText = "Look for the ear in the menu bar."
+        NSApp.activate()
+        alert.runModal()
+        NSApp.terminate(nil)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Recording.removeLeftovers()
         controller.preferences.applyDockIcon()
