@@ -21,6 +21,10 @@ public enum Problem: Hashable, Sendable, Identifiable {
     case savingFailed(String)
     /// The Markdown copy could not be written; the transcript itself is saved.
     case exportFailed(String)
+    /// Importing Earshot 0.1's transcripts stopped part way; it resumes at next launch.
+    case importFailed(String)
+    /// The folder the user chose could not be opened, so its 0.1 transcripts wait.
+    case transcriptsFolderUnavailable
     case audioNotKept(String)
     /// Export Audio… could not write the copy; the kept audio is as it was.
     case audioNotExported(String)
@@ -44,6 +48,8 @@ public enum Problem: Hashable, Sendable, Identifiable {
         case .engineError(let channel): "engineError.\(channel.rawValue)"
         case .savingFailed: "savingFailed"
         case .exportFailed: "exportFailed"
+        case .importFailed: "importFailed"
+        case .transcriptsFolderUnavailable: "transcriptsFolderUnavailable"
         case .audioNotKept: "audioNotKept"
         case .audioNotExported: "audioNotExported"
         case .summaryFailed: "summaryFailed"
@@ -64,7 +70,9 @@ public enum Problem: Hashable, Sendable, Identifiable {
     /// Whether a new session makes it moot. The rest stand until what causes them changes.
     public var endsWithSession: Bool {
         switch self {
-        case .noModel, .translationNeedsDownload, .translationUnsupported: false
+        case .noModel, .importFailed, .transcriptsFolderUnavailable, .translationNeedsDownload,
+            .translationUnsupported:
+            false
         default: true
         }
     }
@@ -91,6 +99,12 @@ public enum Problem: Hashable, Sendable, Identifiable {
             Self.sentences("Earshot could not save the transcript.", detail)
         case .exportFailed(let detail):
             Self.sentences("Earshot could not write the transcript's Markdown file.", detail)
+        case .importFailed(let detail):
+            Self.sentences(
+                "Earshot could not import all the transcripts Earshot 0.1 saved. It will try again the next time it opens.",
+                detail)
+        case .transcriptsFolderUnavailable:
+            "Earshot could not open your transcripts folder. Choose it again in Settings."
         case .audioNotKept(let detail):
             Self.sentences("Earshot could not save the audio.", detail)
         case .audioNotExported(let detail):

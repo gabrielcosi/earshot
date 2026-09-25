@@ -6,7 +6,9 @@ import SwiftUI
 struct ProblemRow: View {
     let problem: Problem
     @Environment(SessionController.self) private var controller
+    @Environment(Navigation.self) private var navigation
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -52,6 +54,8 @@ struct ProblemRow: View {
             ("Show Log", { NSWorkspace.shared.open(EngineServer.logURL) })
         case .translationNeedsDownload(let source, let target):
             ("Download…", { download(from: source, to: target) })
+        case .transcriptsFolderUnavailable:
+            ("Open Settings…", showGeneralSettings)
         default:
             nil
         }
@@ -60,6 +64,13 @@ struct ProblemRow: View {
     private func openMicrophoneSettings() {
         let pane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
         if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
+    }
+
+    private func showGeneralSettings() {
+        navigation.settingsTab = .general
+        dismiss()
+        openSettings()
+        NSApp.activate()
     }
 
     private func download(from source: String, to target: String) {

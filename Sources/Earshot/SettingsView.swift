@@ -41,16 +41,31 @@ struct GeneralSettings: View {
                         "Keeps a recording of your microphone and the Mac's sound with each transcript (about 23 MB an hour), so every line can be played back."
                     )
                 }
-                LabeledContent("Folder") {
-                    Text(preferences.transcriptsFolder.path(percentEncoded: false))
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                        .foregroundStyle(.secondary)
+                LabeledContent {
+                    Text(
+                        preferences.lostTranscriptsFolder
+                            ?? preferences.transcriptsFolder.path(percentEncoded: false)
+                    )
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .foregroundStyle(.secondary)
+                } label: {
+                    Text("Folder")
+                    if preferences.transcriptsFolderLost {
+                        Text(
+                            "Earshot could not open the folder you chose. Choose it again, or use the default."
+                        )
+                    }
                 }
                 HStack {
                     Spacer()
-                    if !preferences.usesDefaultTranscriptsFolder {
-                        Button("Use Default") { preferences.resetTranscriptsFolder() }
+                    if !preferences.usesDefaultTranscriptsFolder
+                        || preferences.transcriptsFolderLost
+                    {
+                        Button("Use Default") {
+                            preferences.resetTranscriptsFolder()
+                            Task { await controller.importEarlierTranscripts() }
+                        }
                     }
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([
@@ -65,6 +80,24 @@ struct GeneralSettings: View {
                 Text(
                     "Earshot saves each transcript after every finished line and writes a Markdown copy here when the session ends. It keeps the copy up to date until the copy is changed, moved, or deleted outside Earshot."
                 )
+            }
+
+            if !controller.unimportedFiles.isEmpty {
+                Section {
+                    ForEach(controller.unimportedFiles, id: \.self) { file in
+                        LabeledContent(file.lastPathComponent) {
+                            Button("Show in Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([file])
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Not Imported")
+                } footer: {
+                    Text(
+                        "Earshot 0.1 saved these files, but Earshot could not read them as transcripts, so they are not in the window. The files are left as they are."
+                    )
+                }
             }
 
             Section {
@@ -125,6 +158,8 @@ struct GeneralSettings: View {
         panel.prompt = "Use Folder"
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         try? controller.preferences.setTranscriptsFolder(folder)
+        // Until the import of 0.1's transcripts finishes once, it runs on the folder chosen.
+        Task { await controller.importEarlierTranscripts() }
     }
 }
 

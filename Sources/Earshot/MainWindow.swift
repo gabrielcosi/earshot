@@ -96,7 +96,7 @@ struct MainWindow: View {
                     "Earshot could not read its transcripts",
                     systemImage: "exclamationmark.triangle",
                     description: Text("Quit Earshot and open it again."))
-            } else if saved.entries.isEmpty, !controller.hasLiveSession {
+            } else if saved.entries.isEmpty, !controller.hasLiveSession, !controller.importing {
                 ContentUnavailableView(
                     "No transcripts yet", systemImage: "waveform",
                     description: Text("Start listening from the ear in the menu bar."))

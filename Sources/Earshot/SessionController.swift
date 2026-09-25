@@ -42,6 +42,11 @@ final class SessionController {
     /// Transcripts being exported, and those changed again since their export started.
     @ObservationIgnored var exportRuns: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored var exportAgain: Set<UUID> = []
+    /// Earshot 0.1's files are being imported, and how many are done of how many.
+    var importing = false
+    var importProgress: (done: Int, total: Int)?
+    /// Files in the transcripts folder the import could not read as transcripts.
+    var unimportedFiles: [URL] = []
     var names: [Speaker: String] = [:]
     /// What keeps Earshot from working right now, shown in the menu.
     var problems = Problems()
@@ -272,23 +277,6 @@ final class SessionController {
         state = .idle
         if !preferences.keepEngineLoaded { engine.stop() }
         sessionEnded(byUser: byUser)
-    }
-
-    /// Names a transcript's speakers in the store, and in the session still open in the app.
-    func name(speakers names: [Speaker: String], in transcript: UUID) {
-        do {
-            try store.rename(transcript, names)
-        } catch {
-            reportSavingFailed(error)
-            return
-        }
-        if transcript == savedID {
-            for (speaker, name) in names {
-                let name = name.trimmingCharacters(in: .whitespaces)
-                if !name.isEmpty { self.names[speaker] = name }
-            }
-        }
-        scheduleExport(transcript)
     }
 
     private func connect(_ channel: Channel, diarize: Bool, to endpoint: EngineEndpoint)

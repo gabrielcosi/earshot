@@ -303,7 +303,7 @@ import Testing
             #expect(
                 Set(tables) == [
                     "transcript", "paragraph", "paragraph_edit", "speaker_name", "translation",
-                    "summary", "local_export",
+                    "summary", "local_export", "local_migration", "local_migration_file",
                 ])
             for table in tables {
                 let key = try Row.fetchAll(db, sql: "PRAGMA table_info(\(table))")

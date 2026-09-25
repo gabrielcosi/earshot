@@ -12,7 +12,7 @@ struct TranscriptRecord: Codable, FetchableRecord, PersistableRecord {
     var endedAt: Date?
     /// The user's title; nil for the one Earshot gives, which is made from `startedAt`.
     var title: String?
-    /// `live` for a session Earshot recorded; the migration of older files adds `imported`.
+    /// `live` for a session Earshot recorded, `imported` for a file an earlier version saved.
     var origin: String
     /// The kept audio's file name in the store's audio folder.
     var audio: String?

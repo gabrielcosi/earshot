@@ -60,7 +60,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Recording.removeLeftovers()
-        controller.recoverUnfinished()
+        controller.sealUnfinished()
+        Task {
+            await controller.importEarlierTranscripts()
+            controller.exportUnexported()
+        }
         controller.preferences.applyDockIcon()
         TranscriptCommands.zoomInWithEquals()
     }

@@ -43,14 +43,39 @@ extension SessionController {
         problems.report(.savingFailed(Self.actionable(error)))
     }
 
-    /// At launch: a session a crash or a forced quit left open is sealed as it was, and every
-    /// transcript without a Markdown file gets one.
-    func recoverUnfinished() {
+    /// Names a transcript's speakers in the store, and in the session still open in the app.
+    func name(speakers names: [Speaker: String], in transcript: UUID) {
+        do {
+            try store.rename(transcript, names)
+        } catch {
+            reportSavingFailed(error)
+            return
+        }
+        if transcript == savedID {
+            for (speaker, name) in names {
+                let name = name.trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty { self.names[speaker] = name }
+            }
+        }
+        scheduleExport(transcript)
+    }
+
+    /// At launch, before a session can start: a session a crash or a forced quit left open is
+    /// sealed as it was. Later, any open transcript is the session being recorded.
+    func sealUnfinished() {
         do {
             let unfinished = try store.sealUnfinished()
             if !unfinished.isEmpty {
                 log.notice("sealed \(unfinished.count) unfinished transcripts")
             }
+        } catch {
+            reportSavingFailed(error)
+        }
+    }
+
+    /// Every sealed transcript without a Markdown file gets one.
+    func exportUnexported() {
+        do {
             for transcript in try store.unexported() { scheduleExport(transcript) }
         } catch {
             reportSavingFailed(error)

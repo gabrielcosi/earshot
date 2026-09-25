@@ -145,8 +145,9 @@ enum Exports {
     }
 }
 
-/// The Markdown file was changed or deleted outside Earshot, so Earshot no longer updates it:
-/// said where the transcript is, with a way to write a new one.
+/// The Markdown file no longer matches what Earshot wrote: it was changed, moved, or deleted
+/// outside Earshot, or it is an 0.1 file Earshot would write differently. Said where the
+/// transcript is, with a way to write a new one.
 struct StaleExportBanner: View {
     let transcript: UUID
     let file: URL
@@ -161,7 +162,7 @@ struct StaleExportBanner: View {
             Text(
                 missing
                     ? "The Markdown file was moved or deleted, so Earshot no longer updates it."
-                    : "The Markdown file was changed outside Earshot, so Earshot no longer updates it."
+                    : "The Markdown file no longer matches what Earshot wrote, so Earshot no longer updates it."
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             if !missing {

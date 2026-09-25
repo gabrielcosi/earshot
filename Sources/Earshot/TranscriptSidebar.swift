@@ -22,15 +22,25 @@ struct TranscriptSidebar: View {
             }
         }
         .safeAreaBar(edge: .bottom) {
-            SettingsLink {
-                HStack {
-                    Label("Settings…", systemImage: "gearshape")
-                    Spacer()
-                    Text("⌘,").foregroundStyle(.secondary).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 10) {
+                if let progress = controller.importProgress {
+                    ProgressView(value: Double(progress.done), total: Double(progress.total)) {
+                        Text("Importing transcripts…")
+                    } currentValueLabel: {
+                        Text("\(progress.done) of \(progress.total)").monospacedDigit()
+                    }
+                    .controlSize(.small)
                 }
-                .contentShape(.rect)
+                SettingsLink {
+                    HStack {
+                        Label("Settings…", systemImage: "gearshape")
+                        Spacer()
+                        Text("⌘,").foregroundStyle(.secondary).accessibilityHidden(true)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.borderless)
             }
-            .buttonStyle(.borderless)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }

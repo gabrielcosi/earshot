@@ -40,7 +40,7 @@ The window lists your transcripts by day, with the session in progress on top. P
 - **Summarize** in the transcript's toolbar adds an overview, decisions, and action items above it, every time you stop if you turn that on in **Settings > Summaries**. Apple Intelligence writes them unless you choose an endpoint.
 - **Keep audio** keeps a recording of your microphone and the Mac's sound with each transcript (about 23 MB an hour). The transcript then opens with a player: click the waveform, or a line's play button, to listen from there. Space plays and pauses. **Show Audio in Finder** and **Export Audio…** are under **Show in Finder** in the toolbar.
 
-Earshot keeps your transcripts in its own library and writes a Markdown copy of each one to Earshot's folder, or to a folder you choose in **Settings > General**. It keeps the copy up to date as you name speakers or add a summary. Once you change or delete a copy outside Earshot, Earshot leaves it alone and says so above the transcript; **Export…** writes a new one.
+Earshot keeps your transcripts in its own library and writes a Markdown copy of each one to Earshot's folder, or to a folder you choose in **Settings > General**. It keeps the copy up to date as you name speakers or add a summary. Once you change or delete a copy outside Earshot, Earshot leaves it alone and says so above the transcript; **Export…** writes a new one. Transcripts saved by Earshot 0.1 are imported into the library the first time a newer version opens, with their kept audio. The files themselves are left as they are.
 
 ## Privacy
 

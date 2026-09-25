@@ -103,6 +103,21 @@ public final class TranscriptStore: Sendable {
                 table.column("exportedAt", .datetime).notNull()
             }
         }
+        migrator.registerMigration("v2") { db in
+            try db.create(table: "local_migration") { table in
+                table.primaryKey("id", .blob)
+                table.column("startedAt", .datetime).notNull()
+                table.column("finishedAt", .datetime)
+            }
+            try db.create(table: "local_migration_file") { table in
+                table.primaryKey("id", .blob)
+                table.column("path", .text).notNull()
+                table.column("sha256", .text)
+                table.column("transcriptId", .blob).indexed()
+                    .references("transcript", onDelete: .setNull)
+                table.column("imported", .boolean).notNull()
+            }
+        }
         return migrator
     }
 

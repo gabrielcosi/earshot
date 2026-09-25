@@ -119,6 +119,11 @@ final class Preferences {
     /// Where the transcripts' Markdown copies are written. The sandbox allows the app's own
     /// container, or a folder the user picked, remembered as a security-scoped bookmark.
     private(set) var transcriptsFolder: URL
+    /// A folder was chosen, but its bookmark no longer opens: the default stands in until the
+    /// user chooses it again.
+    private(set) var transcriptsFolderLost = false
+    /// Where that folder was, as its bookmark remembers it.
+    private(set) var lostTranscriptsFolder: String?
     private static let defaultTranscriptsFolder = URL.documentsDirectory.appending(path: "Earshot")
 
     init() {
@@ -137,7 +142,13 @@ final class Preferences {
         summarizeAutomatically = defaults.bool(forKey: "summarizeAutomatically")
         suggestSpeakerNames = defaults.bool(forKey: "suggestSpeakerNames")
         showDockIcon = defaults.object(forKey: "showDockIcon") as? Bool ?? false
-        transcriptsFolder = Self.resolveBookmark() ?? Self.defaultTranscriptsFolder
+        let chosen = Self.resolveBookmark()
+        if chosen == nil, let bookmark = defaults.data(forKey: "transcriptsBookmark") {
+            transcriptsFolderLost = true
+            lostTranscriptsFolder =
+                URL.resourceValues(forKeys: [.pathKey], fromBookmarkData: bookmark)?.path
+        }
+        transcriptsFolder = chosen ?? Self.defaultTranscriptsFolder
     }
 
     var usesDefaultTranscriptsFolder: Bool {
@@ -152,12 +163,16 @@ final class Preferences {
         transcriptsFolder.stopAccessingSecurityScopedResource()
         _ = folder.startAccessingSecurityScopedResource()
         transcriptsFolder = folder
+        transcriptsFolderLost = false
+        lostTranscriptsFolder = nil
     }
 
     func resetTranscriptsFolder() {
         UserDefaults.standard.removeObject(forKey: "transcriptsBookmark")
         transcriptsFolder.stopAccessingSecurityScopedResource()
         transcriptsFolder = Self.defaultTranscriptsFolder
+        transcriptsFolderLost = false
+        lostTranscriptsFolder = nil
     }
 
     /// Access is held for the life of the app, so saving never has to reopen it.
