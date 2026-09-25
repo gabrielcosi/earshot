@@ -14,11 +14,7 @@ struct TranscriptPage: View {
     @State private var document: TranscriptDocument?
     @State private var unreadable = false
     /// The saved transcript's kept audio, when there is some.
-    @State private var audio: URL?
-    @State private var player = ClipPlayer()
-    /// A line plays until the next one starts; a long monologue plays its first minute, and its
-    /// text is right there for the rest.
-    private static let longestClip = 60.0
+    @State private var player: TranscriptPlayer?
 
     private var isLive: Bool { item == .live }
 
@@ -38,6 +34,7 @@ struct TranscriptPage: View {
     }
 
     var body: some View {
+        let playing = playingLine
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 6) {
                 if let summary {
@@ -46,7 +43,7 @@ struct TranscriptPage: View {
                 ForEach(lines) { line in
                     TranscriptCard(
                         line: line, display: display, textSize: textSize,
-                        playback: playback(for: line))
+                        playback: playback(for: line, playing: playing))
                 }
             }
             .padding(.horizontal, 18)
@@ -54,7 +51,14 @@ struct TranscriptPage: View {
         }
         .defaultScrollAnchor(isLive ? .bottom : .top, for: .initialOffset)
         .followsLatest(listening, startsAtBottom: isLive, lineHeight: textSize)
-        .safeAreaBar(edge: .top, spacing: 0) { failureBanner }
+        // The failure is about the whole transcript and comes first; the player sits right above
+        // the lines it plays.
+        .safeAreaBar(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                failureBanner
+                if let player { PlayerBar(player: player) }
+            }
+        }
         .safeAreaBar(edge: .bottom, spacing: 0) {
             if listening {
                 LiveBars(display: showsTranslation ? display : .original, textSize: textSize)
@@ -70,7 +74,8 @@ struct TranscriptPage: View {
         .onChange(of: controller.names) { showLive() }
         .onChange(of: controller.rules) { showLive() }
         .task(id: controller.fileEdits) { read() }
-        .onDisappear { player.stop() }
+        .focusedSceneValue(\.transcriptPlayer, player)
+        .onDisappear { player?.pause() }
     }
 
     private var textSize: Double { TranscriptTextSize.clamped(storedSize) }
@@ -96,9 +101,8 @@ struct TranscriptPage: View {
         let document = TranscriptDocument(markdown: markdown)
         self.document = document
         lines = TranscriptLine.lines(in: document)
-        let audio = TranscriptAudio.file(for: file)
-        self.audio =
-            FileManager.default.fileExists(atPath: audio.path(percentEncoded: false)) ? audio : nil
+        if player == nil { player = TranscriptAudio.kept(for: file).flatMap(TranscriptPlayer.init) }
+        player?.starts = lines.map(\.start)
     }
 
     /// The user's title, else the time: the date is in the subtitle.
@@ -152,14 +156,20 @@ struct TranscriptPage: View {
         }
     }
 
-    /// Kept audio plays each line; the session just ended has none to play here.
-    private func playback(for line: TranscriptLine) -> TranscriptCard.Playback? {
-        guard let audio else { return nil }
-        return TranscriptCard.Playback(playing: player.playing == line.id) {
-            let next = lines.drop { $0.id != line.id }.dropFirst().first?.start
-            let seconds = min(
-                (next ?? line.start + Self.longestClip) - line.start, Self.longestClip)
-            player.toggle(line.id, file: audio, from: line.start, seconds: max(seconds, 1))
+    /// Kept audio plays from any line; the session just ended has none to play here.
+    private func playback(for line: TranscriptLine, playing: String?) -> TranscriptCard.Playback? {
+        guard let player else { return nil }
+        return TranscriptCard.Playback(current: line.id == playing) {
+            player.play(from: line.start)
         }
+    }
+
+    /// The line the player is in, once it has been played or moved; `starts` follows `lines`.
+    private var playingLine: String? {
+        guard let player, player.isPlaying || player.time > 0,
+            let index = Playback.line(at: player.time, starts: player.starts),
+            lines.indices.contains(index)
+        else { return nil }
+        return lines[index].id
     }
 }

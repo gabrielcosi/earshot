@@ -128,6 +128,11 @@ public struct Problems: Sendable, Equatable {
         all.removeAll(where: matches)
     }
 
+    /// The user closed it; it comes back when it is reported again.
+    public mutating func dismiss(_ problem: Problem) {
+        resolve { $0.id == problem.id }
+    }
+
     public mutating func startSession() {
         resolve { $0.endsWithSession }
     }

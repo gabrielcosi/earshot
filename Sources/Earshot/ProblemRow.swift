@@ -21,6 +21,16 @@ struct ProblemRow: View {
                     Button(action.title, action: action.run).controlSize(.small)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // No model is not a report but the state of the library: it goes once a model is
+            // chosen, and the button under it sets one up.
+            if problem != .noModel {
+                Button("Dismiss", systemImage: "xmark") { controller.problems.dismiss(problem) }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("Dismiss")
+            }
         }
         .font(.callout)
     }

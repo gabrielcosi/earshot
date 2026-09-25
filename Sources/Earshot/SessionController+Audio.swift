@@ -44,6 +44,8 @@ extension SessionController {
                 try TranscriptAudio.encode(
                     microphone: microphoneURL, system: systemURL, to: destination)
             }.value
+            // A transcript opened while this ran shows its player now.
+            fileEdits += 1
         } catch {
             log.error("keeping the audio failed: \(error, privacy: .public)")
             problems.report(.audioNotKept(Self.actionable(error)))

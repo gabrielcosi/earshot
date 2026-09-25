@@ -35,4 +35,60 @@ import Testing
         #expect(file.fileFormat.sampleRate == 16_000)
         #expect(abs(Double(file.length) / 16_000 - 3) < 0.1)
     }
+
+    @Test func keptAudioIsFoundOnlyWhenItExists() throws {
+        let directory = try Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transcript = directory.appending(path: "2026-09-25 1701 transcript.md")
+        #expect(TranscriptAudio.kept(for: transcript) == nil)
+        try Data().write(to: directory.appending(path: "2026-09-25 1701 transcript.m4a"))
+        #expect(
+            TranscriptAudio.kept(for: transcript)?.lastPathComponent
+                == "2026-09-25 1701 transcript.m4a")
+    }
+
+    /// A second of silence then a second of tone, on either side: the waveform is flat, then full.
+    @Test(arguments: [true, false])
+    func peaksFollowTheLouderChannel(toneOnMicrophone: Bool) throws {
+        let directory = try Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let silence = Data(count: 32_000 * 2)
+        let tone = Data(count: 32_000) + Self.tone(seconds: 1)
+        let microphone = directory.appending(path: "mic.pcm")
+        let system = directory.appending(path: "sys.pcm")
+        try (toneOnMicrophone ? tone : silence).write(to: microphone)
+        try (toneOnMicrophone ? silence : tone).write(to: system)
+        let output = directory.appending(path: "transcript.m4a")
+        try TranscriptAudio.encode(microphone: microphone, system: system, to: output)
+        let peaks = try TranscriptAudio.peaks(of: output, count: 4)
+        #expect(peaks.count == 4)
+        #expect(peaks[0] < 0.1, "silence drew \(peaks)")
+        #expect(peaks[3] > 0.9, "the tone drew \(peaks)")
+    }
+
+    /// A failed encode, here a system recording that cannot be read, leaves no audio behind.
+    @Test func aFailedEncodeLeavesNoFileBehind() throws {
+        let directory = try Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        #expect(throws: (any Error).self) {
+            try TranscriptAudio.encode(
+                microphone: nil, system: directory.appending(path: "missing.pcm"),
+                to: directory.appending(path: "transcript.m4a"))
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path()).isEmpty)
+    }
+
+    private static func directory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    /// A 1 kHz tone at half scale, as the raw 16 kHz PCM16 a session records.
+    private static func tone(seconds: Int) -> Data {
+        let samples = (0..<(16_000 * seconds)).map { index in
+            Int16(16_384 * sin(2 * Double.pi * 1_000 * Double(index) / 16_000)).littleEndian
+        }
+        return samples.withUnsafeBytes { Data($0) }
+    }
 }

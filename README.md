@@ -38,7 +38,7 @@ The window lists your transcripts by day, with the session in progress on top. P
 - **Include my microphone** can be turned off to transcribe a podcast or a video with nobody talking over it.
 - **Settings > Words** holds names and terms Earshot should recognize, and replacements to apply to the text.
 - **Summarize** in the transcript's toolbar adds an overview, decisions, and action items to its file, every time you stop if you turn that on in **Settings > Summaries**. Apple Intelligence writes them unless you choose an endpoint.
-- **Keep audio** saves your microphone and what the Mac plays next to the transcript, about 23 MB an hour, so you can play back any line.
+- **Keep audio** saves your microphone and what the Mac plays next to the transcript, about 23 MB an hour. The transcript then opens with a player: click the waveform, or a line's play button, to listen from there. Space plays and pauses.
 
 Transcripts are saved to Earshot's own folder, or to a folder you choose in **Settings > General**.
 

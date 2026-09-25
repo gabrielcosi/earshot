@@ -6,8 +6,9 @@ import SwiftUI
 /// speaker's colour, and the translation under it.
 struct TranscriptCard: View {
     struct Playback {
-        let playing: Bool
-        let toggle: () -> Void
+        /// The line the player is in, highlighted.
+        let current: Bool
+        let play: () -> Void
     }
 
     let line: TranscriptLine
@@ -25,14 +26,11 @@ struct TranscriptCard: View {
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                     if let playback {
-                        Button(
-                            playback.playing ? "Stop" : "Play",
-                            systemImage: playback.playing ? "stop.fill" : "play.fill",
-                            action: playback.toggle
-                        )
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
+                        Button("Play from Here", systemImage: "play.fill", action: playback.play)
+                            .labelStyle(.iconOnly)
+                            .help("Play from here")
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
                     }
                 }
                 .padding(.leading, SpeakerName.indent)
@@ -45,17 +43,21 @@ struct TranscriptCard: View {
                 .textSelection(.enabled)
         }
         .padding(10)
+        .background {
+            if playback?.current == true {
+                RoundedRectangle(cornerRadius: 10).fill(.tint.quinary)
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             [
+                playback?.current == true ? "Playing" : nil,
                 "\(line.speaker), \(Self.spoken(line.start))", text.main,
                 text.under.map { "Translation: \($0)" },
             ].compactMap(\.self).joined(separator: ". ")
         )
         .accessibilityActions {
-            if let playback {
-                Button(playback.playing ? "Stop" : "Play", action: playback.toggle)
-            }
+            if let playback { Button("Play from Here", action: playback.play) }
         }
     }
 

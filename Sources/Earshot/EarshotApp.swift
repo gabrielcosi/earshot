@@ -24,7 +24,10 @@ struct EarshotApp: App {
                 .environment(delegate.navigation)
         }
         .defaultSize(width: 960, height: 680)
-        .commands { TranscriptCommands(updater: delegate.updater) }
+        .commands {
+            TranscriptCommands(updater: delegate.updater)
+            PlaybackCommands()
+        }
 
         Settings {
             SettingsWindow()

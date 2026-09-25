@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import EarshotKit
 import Foundation
 
 /// A session's audio kept next to its transcript: microphone on the left channel, the Mac's
@@ -12,6 +13,37 @@ public enum TranscriptAudio {
         transcript.deletingPathExtension().appendingPathExtension("m4a")
     }
 
+    /// The transcript's kept audio, or nil when none was kept. Everything that plays kept audio
+    /// finds it here.
+    public static func kept(for transcript: URL) -> URL? {
+        let audio = file(for: transcript)
+        return FileManager.default.fileExists(atPath: audio.path(percentEncoded: false))
+            ? audio : nil
+    }
+
+    /// The loudest sample of either channel in each of `count` stretches, for the waveform.
+    /// Decoded a second at a time, like `encode`, so an hour never sits in memory. Blocking: call
+    /// it off the main actor.
+    public static func peaks(of audio: URL, count: Int) throws -> [Float] {
+        let file = try AVAudioFile(forReading: audio)
+        let format = file.processingFormat
+        let second = AVAudioFrameCount(format.sampleRate)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: second) else {
+            return []
+        }
+        var reducer = PeakReducer(frames: Int(file.length), count: count)
+        while file.framePosition < file.length {
+            try file.read(into: buffer, frameCount: second)
+            guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else { break }
+            let frames = Int(buffer.frameLength)
+            reducer.add(
+                (0..<Int(format.channelCount)).map {
+                    UnsafeBufferPointer(start: channels[$0], count: frames)
+                })
+        }
+        return reducer.peaks
+    }
+
     /// Encodes the raw 16 kHz PCM16 recordings, one second at a time so an hour never sits in
     /// memory. The shorter channel is padded with silence.
     public static func encode(microphone: URL?, system: URL, to destination: URL) throws {
@@ -20,12 +52,26 @@ public enum TranscriptAudio {
                 commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 2,
                 interleaved: false)
         else { return }
+        let temporary = destination.deletingLastPathComponent()
+            .appending(path: ".\(UUID().uuidString).m4a")
+        // A failure part way, such as a full disk, would otherwise leave hidden audio behind.
+        do {
+            try write(microphone: microphone, system: system, format: format, to: temporary)
+            _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
+    }
+
+    /// The AVAudioFile is closed when this returns, before the file is moved into place.
+    private static func write(
+        microphone: URL?, system: URL, format: AVAudioFormat, to temporary: URL
+    ) throws {
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 16_000,
             AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: bitRate,
         ]
-        let temporary = destination.deletingLastPathComponent()
-            .appending(path: ".\(UUID().uuidString).m4a")
         let output = try AVAudioFile(
             forWriting: temporary, settings: settings, commonFormat: .pcmFormatFloat32,
             interleaved: false)
@@ -49,7 +95,6 @@ public enum TranscriptAudio {
             fill(channels[1], frames: frames, from: sys)
             try output.write(from: buffer)
         }
-        _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
     }
 
     private static func fill(_ channel: UnsafeMutablePointer<Float>, frames: Int, from pcm: Data) {

@@ -14,11 +14,7 @@ struct NamingView: View {
     @State private var suggesting = false
     @State private var player = ClipPlayer()
 
-    private var savedAudio: URL? {
-        let audio = TranscriptAudio.file(for: file)
-        return FileManager.default.fileExists(atPath: audio.path(percentEncoded: false))
-            ? audio : nil
-    }
+    private var savedAudio: URL? { TranscriptAudio.kept(for: file) }
 
     /// Saved audio, or the recording of the session that just ended.
     private var hasAudio: Bool {

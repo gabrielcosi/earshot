@@ -42,6 +42,17 @@ import Testing
         #expect(problems.all == [.noModel])
     }
 
+    /// Dismissed from the menu, a problem goes until something reports it again.
+    @Test func aDismissedProblemGoesUntilItIsReportedAgain() {
+        var problems = Problems()
+        problems.report(.engineStopped)
+        problems.report(.connectionLost(.system))
+        problems.dismiss(.engineStopped)
+        #expect(problems.all == [.connectionLost(.system)])
+        problems.report(.engineStopped)
+        #expect(problems.all == [.connectionLost(.system), .engineStopped])
+    }
+
     @Test func messagesNameTheLanguagesAndTheAudio() {
         let english = Locale(identifier: "en")
         #expect(
