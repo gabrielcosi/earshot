@@ -94,6 +94,10 @@ depends = ["engine:sentencepiece", "engine:aec"]
 run = '''
 cd "$EARSHOT_ENGINE"
 git submodule update --init ggml third_party/cpp-httplib llama.cpp
+# Earshot's changes to the engine.
+for patch in "{{config_root}}"/patches/nemo-speech/*.patch; do
+  git apply --reverse --check "$patch" 2>/dev/null || git apply "$patch"
+done
 scripts/configure.sh metal-asr \
   -DNEMO_SPEECH_BUILD_HTTP=ON \
   -DNEMO_SPEECH_BUILD_TTS=OFF \
@@ -116,7 +120,7 @@ nemo-speech pull nvidia/Nemotron-3-Diarization
 
 [tasks.serve]
 description = "Run the local speech server on 127.0.0.1:8765"
-run = 'nemo-speech serve --config config/server.yaml --asr-model "$EARSHOT_ASR_MODEL"'
+run = 'nemo-speech serve --config config/server.yaml --asr-model "$EARSHOT_ASR_MODEL" --diar-model nvidia/Nemotron-3-Diarization'
 
 [tasks.fmt]
 description = "Format Swift sources in place"
@@ -307,7 +311,8 @@ if curl -fs -o /dev/null http://127.0.0.1:8765/ready; then
   exit 1
 fi
 log="$EARSHOT_DEPS/verify-engine.log"
-nemo-speech serve --config config/server.yaml --asr-model "$EARSHOT_ASR_MODEL" >"$log" 2>&1 &
+nemo-speech serve --config config/server.yaml --asr-model "$EARSHOT_ASR_MODEL" \
+  --diar-model nvidia/Nemotron-3-Diarization >"$log" 2>&1 &
 engine=$!
 trap 'kill $engine 2>/dev/null; wait $engine 2>/dev/null' EXIT
 for _ in $(seq 120); do

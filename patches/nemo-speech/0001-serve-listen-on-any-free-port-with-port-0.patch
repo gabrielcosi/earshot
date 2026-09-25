@@ -1,0 +1,118 @@
+From 3b4bc59e6aa192c76b84b8389c53b6d7c40cc1ce Mon Sep 17 00:00:00 2001
+From: Gabriel Cosi <contact@gabrielcosi.dev>
+Date: Fri, 25 Sep 2026 11:34:43 +0200
+Subject: [PATCH 1/2] serve: listen on any free port with --port 0
+
+---
+ app/serve.cpp               | 18 +++++++++++-------
+ server/http/http_server.cpp | 13 ++++++++++++-
+ server/http/http_server.h   |  2 ++
+ 3 files changed, 25 insertions(+), 8 deletions(-)
+
+diff --git a/app/serve.cpp b/app/serve.cpp
+index b066602..1b55b86 100644
+--- a/app/serve.cpp
++++ b/app/serve.cpp
+@@ -172,7 +172,7 @@ run_server(int argc, char** argv) {
+     parser.Register(
+         "http.port",
+         [&](const std::string& value) {
+-            server_config.port = parse_int(value, "http.port", 1, 65535);
++            server_config.port = parse_int(value, "http.port", 0, 65535);
+         },
+         "HTTP port");
+     parser.Register(
+@@ -303,7 +303,7 @@ run_server(int argc, char** argv) {
+         else if (arg == "--host")
+             server_config.address = value(i, arg);
+         else if (arg == "--port")
+-            server_config.port = parse_int(value(i, arg), arg, 1, 65535);
++            server_config.port = parse_int(value(i, arg), arg, 0, 65535);
+         else if (arg == "--threads") {
+             server_config.threads = parse_int(value(i, arg), arg, 1, 1024);
+             http_threads_set = true;
+@@ -660,15 +660,16 @@ run_server(int argc, char** argv) {
+         if (!browser_host.empty() && browser_host.find(':') != std::string::npos &&
+             browser_host.front() != '[')
+             browser_host = "[" + browser_host + "]";
+-        const std::string playground_url =
+-            std::string(server_config.tls_certificate.empty() ? "http://" : "https://") +
+-            browser_host + ":" + std::to_string(server_config.port) + "/";
+         if (!http_server->bind()) {
+             std::fprintf(
+                 stderr, "error: could not bind HTTP to %s:%d\n", server_config.address.c_str(),
+                 server_config.port);
+             ok = false;
+         } else {
++            // With --port 0 the system picks the port, so the URL is only known after bind.
++            const std::string playground_url =
++                std::string(server_config.tls_certificate.empty() ? "http://" : "https://") +
++                browser_host + ":" + std::to_string(http_server->port()) + "/";
+             if (cli_json()) {
+                 nemo_speech::json::Value event(nemo_speech::json::Value::Object{});
+                 event["event"] = "listener.ready";
+@@ -679,11 +680,13 @@ run_server(int argc, char** argv) {
+                     capabilities.emplace_back(capability);
+                 event["capabilities"] = std::move(capabilities);
+                 std::printf("%s\n", event.dump().c_str());
++                // A client reading a pipe waits for this line to learn the port.
++                std::fflush(stdout);
+             } else if (!cli_quiet()) {
+                 std::printf(
+                     "HTTP API listening on %s://%s:%d\n",
+                     server_config.tls_certificate.empty() ? "http" : "https",
+-                    server_config.address.c_str(), server_config.port);
++                    server_config.address.c_str(), http_server->port());
+                 if (server_config.enable_playground)
+                     std::printf("Playground: %s\n", playground_url.c_str());
+             }
+@@ -705,7 +708,8 @@ print_serve_help(const char* program) {
+         "local paths, indexed names, or through a YAML configuration.\n\n"
+         "Server:\n"
+         "  --host ADDRESS          Bind address (default: 127.0.0.1)\n"
+-        "  --port N                HTTP port (default: 8080)\n"
++        "  --port N                HTTP port (default: 8080; 0 picks a free port, reported\n"
++        "                          in the listener.ready event)\n"
+         "  --threads N             Bounded HTTP worker count (default: 4)\n"
+         "  --max-upload-mb N       Maximum request body (default: 512)\n"
+         "  --read-timeout SEC      Socket read timeout (default: 30)\n"
+diff --git a/server/http/http_server.cpp b/server/http/http_server.cpp
+index c151d3b..56df72f 100644
+--- a/server/http/http_server.cpp
++++ b/server/http/http_server.cpp
+@@ -1227,7 +1227,18 @@ Server::listen() {
+ 
+ bool
+ Server::bind() {
+-    return impl_->server->bind_to_port(impl_->config.address, impl_->config.port);
++    if (impl_->config.port != 0)
++        return impl_->server->bind_to_port(impl_->config.address, impl_->config.port);
++    const int port = impl_->server->bind_to_any_port(impl_->config.address);
++    if (port < 0)
++        return false;
++    impl_->config.port = port;
++    return true;
++}
++
++int
++Server::port() const {
++    return impl_->config.port;
+ }
+ 
+ bool
+diff --git a/server/http/http_server.h b/server/http/http_server.h
+index de69b4b..4c7f63a 100644
+--- a/server/http/http_server.h
++++ b/server/http/http_server.h
+@@ -44,6 +44,8 @@ class Server {
+     bool listen();
+     bool bind();
+     bool listen_after_bind();
++    // The listening port; after bind() with port 0, the one the system assigned.
++    int port() const;
+     void stop();
+ 
+    private:
+-- 
+2.49.0
+

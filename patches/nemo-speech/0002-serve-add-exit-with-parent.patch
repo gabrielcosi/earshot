@@ -1,0 +1,84 @@
+From e6b0027d62ba8ddda2cb541ac72daff7426e9d7e Mon Sep 17 00:00:00 2001
+From: Gabriel Cosi <contact@gabrielcosi.dev>
+Date: Fri, 25 Sep 2026 11:34:43 +0200
+Subject: [PATCH 2/2] serve: add --exit-with-parent
+
+---
+ app/serve.cpp | 31 ++++++++++++++++++++++++++++++-
+ 1 file changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/app/serve.cpp b/app/serve.cpp
+index 1b55b86..0c19b74 100644
+--- a/app/serve.cpp
++++ b/app/serve.cpp
+@@ -13,6 +13,9 @@
+ #include <stdexcept>
+ #include <string>
+ #include <thread>
++#if !defined(_WIN32)
++#include <unistd.h>
++#endif
+ #include <utility>
+ #include <vector>
+ 
+@@ -130,6 +133,11 @@ run_server(int argc, char** argv) {
+     bool device_set = false;
+     bool no_warmup = false;
+     bool open_browser = false;
++    bool exit_with_parent = false;
++#if !defined(_WIN32)
++    // Read before the models load, so a parent that exits while they load is still noticed.
++    const pid_t parent = getppid();
++#endif
+     bool http_threads_set = false;
+ #if defined(NEMO_SPEECH_CLI_ASR)
+     nemo_speech::asr::RecognizerConfig asr_config;
+@@ -336,6 +344,13 @@ run_server(int argc, char** argv) {
+             server_config.enable_playground = false;
+         else if (arg == "--open")
+             open_browser = true;
++        else if (arg == "--exit-with-parent") {
++#if defined(_WIN32)
++            throw std::invalid_argument("--exit-with-parent is not supported on Windows");
++#else
++            exit_with_parent = true;
++#endif
++        }
+         else if (arg == "--gpu") {
+             gpu = parse_int(value(i, arg), arg, -1, 1024);
+             device_name = gpu < 0 ? "cpu" : "gpu:" + std::to_string(gpu);
+@@ -634,9 +649,22 @@ run_server(int argc, char** argv) {
+         std::signal(SIGINT, old_int);
+         std::signal(SIGTERM, old_term);
+     });
++#if !defined(_WIN32)
++    // A server started by an app must not outlive it: when the parent exits, however it
++    // exits, the server is re-parented and getppid() changes. Unlike a parent PID, this
++    // cannot be fooled by the PID being reused.
++    auto parent_exited = [&] { return exit_with_parent && getppid() != parent; };
++#else
++    auto parent_exited = [] { return false; };
++#endif
+     std::thread shutdown_watcher([&] {
+-        while (!shutdown_requested.load(std::memory_order_relaxed))
++        while (!shutdown_requested.load(std::memory_order_relaxed)) {
++            if (parent_exited()) {
++                shutdown_requested.store(true, std::memory_order_relaxed);
++                break;
++            }
+             std::this_thread::sleep_for(std::chrono::milliseconds(50));
++        }
+         if (http_server)
+             http_server->stop();
+     });
+@@ -721,6 +749,7 @@ print_serve_help(const char* program) {
+         "  --tls-cert FILE         TLS certificate (requires --tls-key)\n"
+         "  --tls-key FILE          TLS private key\n"
+         "  --no-ui                 Disable the browser playground\n"
++        "  --exit-with-parent      Stop when the process that started the server exits\n"
+         "  --open                  Open the playground in the default browser\n"
+         "  --http.* VALUE          Override any HTTP listener setting\n"
+         "                          Realtime ASR: /v1/audio/transcriptions/realtime\n"
+-- 
+2.49.0
+
