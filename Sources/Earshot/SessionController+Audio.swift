@@ -37,18 +37,20 @@ extension SessionController {
 
     /// Encoding an hour takes a while; it runs off the main actor. The audio goes into the
     /// store's folder, never into the transcripts folder.
-    func keepAudio(system: Recording, microphone: Recording?, for transcript: UUID) async {
-        let (systemURL, microphoneURL) = (system.url, microphone?.url)
+    func keepAudio(_ recordings: SessionRecordings, for transcript: UUID) async {
         let name = "\(transcript.uuidString).m4a"
         let destination = Self.audioFolder.appending(path: name)
         do {
-            try await Task.detached(priority: .utility) {
+            let failure = try await Task.detached(priority: .utility) {
                 try FileManager.default.createDirectory(
                     at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try TranscriptAudio.encode(
-                    microphone: microphoneURL, system: systemURL, to: destination)
+                return try recordings.keep(to: destination)
             }.value
             try store.setAudio(name, for: transcript)
+            if let failure {
+                log.error("kept audio is incomplete: \(failure, privacy: .public)")
+                problems.report(.audioIncomplete(Self.actionable(failure)))
+            }
         } catch {
             log.error("keeping the audio failed: \(error, privacy: .public)")
             problems.report(.audioNotKept(Self.actionable(error)))

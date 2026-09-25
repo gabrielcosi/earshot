@@ -1,4 +1,5 @@
 import AppKit
+import EarshotCapture
 import EarshotKit
 import SwiftUI
 

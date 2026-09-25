@@ -82,7 +82,7 @@ struct TranscriptPage: View {
         .focusedSceneValue(
             \.exportableTranscript, isLive && controller.state != .idle ? nil : transcript
         )
-        .onDisappear { player?.pause() }
+        .onDisappear { player?.close() }
     }
 
     private var textSize: Double { TranscriptTextSize.clamped(storedSize) }

@@ -1,32 +1,39 @@
 @preconcurrency import AVFoundation
+import EarshotCapture
 import Foundation
 import Observation
 
-/// Plays one line of a transcript at a time, from saved audio or from the recording of the session
-/// that just ended.
+/// Plays one line of a transcript at a time, from kept audio, both sides in both ears, or from the
+/// recording of the session that just ended, which holds one side already.
 @Observable
 final class ClipPlayer {
     private(set) var playing: String?
     @ObservationIgnored private var player: AVAudioPlayer?
+    @ObservationIgnored private var kept: KeptAudioPlayer?
     @ObservationIgnored private var ending: Task<Void, Never>?
 
     func toggle(_ id: String, file: URL, from start: Double, seconds: Double) {
         guard begin(id) else { return }
-        guard let player = try? AVAudioPlayer(contentsOf: file) else { return stop() }
-        player.currentTime = start
-        run(player, id: id, seconds: seconds)
+        guard let kept = KeptAudioPlayer(audio: file) else { return stop() }
+        guard kept.play(from: start) else { return stop() }
+        self.kept = kept
+        end(id, after: seconds)
     }
 
     func toggle(_ id: String, clip: Data?) {
         guard begin(id) else { return }
         guard let clip, let player = try? AVAudioPlayer(data: clip) else { return stop() }
-        run(player, id: id, seconds: player.duration)
+        self.player = player
+        player.play()
+        end(id, after: player.duration)
     }
 
     func stop() {
         ending?.cancel()
         player?.stop()
         player = nil
+        kept?.stop()
+        kept = nil
         playing = nil
     }
 
@@ -37,10 +44,8 @@ final class ClipPlayer {
         return !same
     }
 
-    private func run(_ player: AVAudioPlayer, id: String, seconds: Double) {
-        self.player = player
+    private func end(_ id: String, after seconds: Double) {
         playing = id
-        player.play()
         ending = Task {
             try? await Task.sleep(for: .seconds(seconds))
             if !Task.isCancelled, playing == id { stop() }

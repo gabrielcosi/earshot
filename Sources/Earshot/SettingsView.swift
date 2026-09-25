@@ -30,6 +30,19 @@ struct SettingsWindow: View {
 struct GeneralSettings: View {
     @Environment(SessionController.self) private var controller
 
+    /// Low was measured on a real session. Medium and High were measured on the test fixtures,
+    /// both sides speaking: 36 and 43 MB an hour, against Low's 27 on the same audio, and 25 and
+    /// 32 with the microphone off. The fixtures have nothing above 8 kHz, which Medium and High
+    /// keep, so real audio comes out a little larger; both sides speaking without a pause, it
+    /// measured 47 and 62.
+    private static func megabytesPerHour(_ quality: AudioQuality) -> Int {
+        switch quality {
+        case .low: 23
+        case .medium: 35
+        case .high: 45
+        }
+    }
+
     var body: some View {
         @Bindable var controller = controller
         @Bindable var preferences = controller.preferences
@@ -38,9 +51,23 @@ struct GeneralSettings: View {
                 Toggle(isOn: $preferences.keepAudio) {
                     Text("Keep audio")
                     Text(
-                        "Keeps a recording of your microphone and the Mac's sound with each transcript (about 23 MB an hour), so every line can be played back."
+                        "Keeps a recording of your microphone and the Mac's sound with each transcript (about \(Self.megabytesPerHour(preferences.keepAudioQuality)) MB an hour), so every line can be played back."
                     )
                 }
+                Picker(selection: $preferences.keepAudioQuality) {
+                    Text("Low").tag(AudioQuality.low)
+                    Text("Medium").tag(AudioQuality.medium)
+                    Text("High").tag(AudioQuality.high)
+                } label: {
+                    Text("Audio Quality")
+                    // High records both sides again at 48 kHz PCM16, 346 MB an hour each.
+                    Text(
+                        preferences.keepAudioQuality == .high
+                            ? "Applies from the next session. With Cancel speaker echo on, your microphone is kept as the engine hears it. High uses up to 0.7 GB more disk space an hour while recording, freed when the session ends."
+                            : "Applies from the next session. With Cancel speaker echo on, your microphone is kept as the engine hears it."
+                    )
+                }
+                .disabled(!preferences.keepAudio)
                 LabeledContent {
                     Text(
                         preferences.lostTranscriptsFolder

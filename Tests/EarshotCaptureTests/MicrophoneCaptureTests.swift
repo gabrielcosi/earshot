@@ -28,4 +28,22 @@ import os
         let hertz = Tone.hertz(output)
         #expect(abs(hertz - 1_000) < 20, "tone came out at \(hertz) Hz")
     }
+
+    /// With Keep audio at Medium or High, the same input also reaches the kept recording at its
+    /// rate, while the engine still gets 16 kHz.
+    @Test func keptOutputGetsTheSameAudioAtItsRate() throws {
+        let engine = OSAllocatedUnfairLock(initialState: Data())
+        let kept = OSAllocatedUnfairLock(initialState: Data())
+        let (format, buffers) = try Tone.second(
+            rate: 48_000, channels: 1, interleaved: false, frames: 4096)
+        let output = KeptOutput(rate: 24_000) { pcm in kept.withLock { $0.append(pcm) } }
+        let onAudio: @Sendable (Data) -> Void = { pcm in engine.withLock { $0.append(pcm) } }
+        let tap = try #require(MicrophoneTap(format: format, kept: output, onAudio: onAudio))
+        buffers.forEach(tap.receive)
+        let heard = Tone.samples(engine.withLock { $0 })
+        let keptSamples = Tone.samples(kept.withLock { $0 })
+        #expect(abs(heard.count - 16_000) < 160, "the engine got \(heard.count) samples")
+        #expect(abs(keptSamples.count - 24_000) < 240, "kept \(keptSamples.count) samples")
+        #expect(abs(Tone.hertz(keptSamples, rate: 24_000) - 1_000) < 20)
+    }
 }

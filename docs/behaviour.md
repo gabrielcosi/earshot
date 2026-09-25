@@ -71,3 +71,12 @@ Measured with the fixtures played through a Mac's speakers as the remote side, t
 - **Daemons keep outputs open.** `com.apple.CoreSpeech` reported `kAudioProcessPropertyIsRunningOutput` with nothing audible playing; it has no `NSRunningApplication`, so it is not offered as a source.
 - **A tap by bundle identifier does not follow helpers.** With a video playing in Safari, a tap of `CATapDescription.bundleIDs = ["com.apple.Safari"]` delivered no samples in 3 s; `["com.apple.WebKit.GPU"]` delivered the video at -22 dBFS, as it would any WebKit app's sound.
 - **A command-line player has no app.** `afplay` reports as playing but has no bundle identifier or `NSRunningApplication`, so it is not offered either.
+
+## AAC and playback of kept audio
+
+Measured with `AVAudioFile` writing AAC on macOS 27.
+
+- **A bitrate sets how much of the band survives.** Tones under noise, stereo: at 24 kHz, 64 kbit/s already passes everything up to 12 kHz; at 48 kHz, 96 kbit/s cuts above 16 kHz and 128 kbit/s reaches about 17 kHz. On `say` speech, the error against the input was 23 dB at 16 kHz and 64 kbit/s, 19.5 dB at 24 kHz and 64 kbit/s, 23 dB at 24 kHz and 96 kbit/s, and 28 dB at 48 kHz and 128 kbit/s.
+- **Size follows the bitrate, less in pauses.** With both sides speaking without a pause, an hour came to 34 MB at 16 kHz and 64 kbit/s, 47 MB at 24 kHz and 96 kbit/s, and 62 MB at 48 kHz and 128 kbit/s. On the test fixtures, with pauses and the microphone speaking part of the time, it came to 27, 36, and 43 MB.
+- **Encoding runs far faster than real time**: about 400 times at 16 kHz and 130 times at 48 kHz, so an hour at High takes about 27 s.
+- **A mixer summing stereo into mono takes each side down 3 dB.** Through an `AVAudioMixerNode` connected in mono, 0.5 on one channel came out 0.354 in both ears of the stereo output, and 0.5 on both came out 0.707. Earshot adds 3 dB after it, so a side alone plays at its recorded level, and Apple's peak limiter (`kAudioUnitSubType_PeakLimiter`) after that: both sides at 0.8 came out at 0.95, and one side alone at 1.0 at 0.999.

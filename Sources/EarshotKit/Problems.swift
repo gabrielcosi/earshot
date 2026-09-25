@@ -26,6 +26,8 @@ public enum Problem: Hashable, Sendable, Identifiable {
     /// The folder the user chose could not be opened, so its 0.1 transcripts wait.
     case transcriptsFolderUnavailable
     case audioNotKept(String)
+    /// A recording stopped part way, such as on a full disk; what came before it was kept.
+    case audioIncomplete(String)
     /// Export Audio… could not write the copy; the kept audio is as it was.
     case audioNotExported(String)
     /// With its cause, when it is one the user can act on.
@@ -51,6 +53,7 @@ public enum Problem: Hashable, Sendable, Identifiable {
         case .importFailed: "importFailed"
         case .transcriptsFolderUnavailable: "transcriptsFolderUnavailable"
         case .audioNotKept: "audioNotKept"
+        case .audioIncomplete: "audioIncomplete"
         case .audioNotExported: "audioNotExported"
         case .summaryFailed: "summaryFailed"
         case .translationNeedsDownload(let source, let target):
@@ -107,6 +110,10 @@ public enum Problem: Hashable, Sendable, Identifiable {
             "Earshot could not open your transcripts folder. Choose it again in Settings."
         case .audioNotKept(let detail):
             Self.sentences("Earshot could not save the audio.", detail)
+        case .audioIncomplete(let detail):
+            Self.sentences(
+                "Earshot kept the audio only up to where recording stopped. The transcript is complete.",
+                detail)
         case .audioNotExported(let detail):
             Self.sentences("Earshot could not export the audio.", detail)
         case .summaryFailed(let cause):

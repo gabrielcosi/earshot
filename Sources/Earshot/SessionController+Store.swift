@@ -1,3 +1,4 @@
+import EarshotCapture
 import EarshotKit
 import Foundation
 import os
@@ -151,26 +152,27 @@ extension SessionController {
         checkExport(transcript)
     }
 
-    /// Export Audio…: the save panel asked before replacing a file already there.
+    /// Export Audio…: both sides mixed into one channel, so the file plays in both ears in any
+    /// player. The save panel asked before replacing a file already there.
     func saveAudio(_ audio: URL, to file: URL) async {
         do {
-            try await Self.copy(audio, to: file)
+            try await Self.exportMix(audio, to: file)
         } catch {
             log.error("exporting the audio failed: \(error, privacy: .public)")
             problems.report(.audioNotExported(Self.actionable(error)))
         }
     }
 
-    /// Copied in full to the volume's replacement folder first, then swapped in, so a copy that
-    /// fails part way leaves the file it would have replaced as it was.
+    /// Written in full to the volume's replacement folder first, then swapped in, so an export
+    /// that fails part way leaves the file it would have replaced as it was.
     @concurrent
-    nonisolated private static func copy(_ audio: URL, to file: URL) async throws {
+    nonisolated private static func exportMix(_ audio: URL, to file: URL) async throws {
         let manager = FileManager.default
         let folder = try manager.url(
             for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: file, create: true)
         defer { try? manager.removeItem(at: folder) }
         let copy = folder.appending(path: file.lastPathComponent)
-        try manager.copyItem(at: audio, to: copy)
+        try TranscriptAudio.exportMix(of: audio, to: copy)
         if manager.fileExists(atPath: file.path(percentEncoded: false)) {
             _ = try manager.replaceItemAt(file, withItemAt: copy)
         } else {

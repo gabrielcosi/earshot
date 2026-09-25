@@ -1,11 +1,10 @@
-@preconcurrency import AVFoundation
 import EarshotCapture
 import EarshotKit
 import Foundation
 import Observation
 
-/// Plays a saved transcript's kept audio from any point, for the player above the transcript and
-/// the cards' Play from Here.
+/// Plays a saved transcript's kept audio from any point, both sides in both ears, for the player
+/// above the transcript and the cards' Play from Here.
 @Observable
 final class TranscriptPlayer {
     let duration: Double
@@ -17,7 +16,7 @@ final class TranscriptPlayer {
     private(set) var time: Double = 0
     /// Where each line starts, to know when the line being played changes.
     @ObservationIgnored var starts: [Double] = []
-    private let player: AVAudioPlayer
+    private let player: KeptAudioPlayer
     private let audio: URL
     @ObservationIgnored private var watching: Task<Void, Never>?
 
@@ -27,11 +26,11 @@ final class TranscriptPlayer {
     nonisolated private static let peakCount = 1000
 
     init?(audio: URL) {
-        guard let player = try? AVAudioPlayer(contentsOf: audio) else { return nil }
+        guard let player = KeptAudioPlayer(audio: audio) else { return nil }
         self.player = player
         self.audio = audio
         duration = player.duration
-        player.prepareToPlay()
+        player.onEnd = { [weak self] in self?.ended() }
     }
 
     var currentTime: Double { isPlaying ? player.currentTime : time }
@@ -50,13 +49,16 @@ final class TranscriptPlayer {
         if isPlaying { pause() } else { play() }
     }
 
+    /// Nothing happens past the end of audio kept only in part.
     func play(from start: Double) {
-        seek(to: start)
-        play()
+        guard player.play(from: start) else { return }
+        time = player.currentTime
+        isPlaying = true
+        watch()
     }
 
     func seek(to position: Double) {
-        player.currentTime = min(max(position, 0), duration)
+        player.seek(to: position)
         time = player.currentTime
         if isPlaying { watch() }
     }
@@ -68,14 +70,27 @@ final class TranscriptPlayer {
         time = player.currentTime
     }
 
+    /// Pauses and lets the audio output go, when the transcript is no longer shown.
+    func close() {
+        pause()
+        player.stop()
+    }
+
     private func play() {
         guard player.play() else { return }
         isPlaying = true
         watch()
     }
 
-    /// Wakes where the line being played changes, rather than polling: the cards move on at each
-    /// line's start, and the button turns back to Play at the end.
+    /// Back to the start at the end, as players do; where it was when the output failed.
+    private func ended() {
+        watching?.cancel()
+        isPlaying = false
+        time = player.currentTime
+    }
+
+    /// Wakes where the line being played changes, rather than polling, so the cards move on at
+    /// each line's start. After the last line's start it stops: the end comes from the player.
     private func watch() {
         watching?.cancel()
         watching = Task { [weak self] in
@@ -83,14 +98,9 @@ final class TranscriptPlayer {
                 self.time = self.player.currentTime
                 let next = Playback.nextChange(
                     after: self.time, starts: self.starts, duration: self.duration)
+                guard next < self.duration else { return }
                 try? await Task.sleep(for: .seconds(next - self.time))
             }
-            guard !Task.isCancelled, let self else { return }
-            // AVAudioPlayer that plays to the end reports the time it last started from, not the
-            // end; back to the start, as players do, rather than to that line.
-            self.player.currentTime = 0
-            self.isPlaying = false
-            self.time = 0
         }
     }
 }

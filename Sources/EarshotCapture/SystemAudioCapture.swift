@@ -21,6 +21,7 @@ public final class SystemAudioCapture: @unchecked Sendable {
     private var procID: AudioDeviceIOProcID?
     private var outputID = AudioObjectID(kAudioObjectUnknown)
     private var onAudio: (@Sendable (Data) -> Void)?
+    private var kept: KeptOutput?
     private var onRestart: (@Sendable () -> Void)?
     /// `AudioSource` identifiers to capture; empty captures every app.
     private var sources: Set<String>
@@ -57,11 +58,14 @@ public final class SystemAudioCapture: @unchecked Sendable {
         }
     }
 
-    /// `onRestart` is called after the tap has been rebuilt on another output device.
+    /// `onRestart` is called after the tap has been rebuilt on another output device. `kept`
+    /// receives the same audio at its own rate.
     public func start(
-        onAudio: @escaping @Sendable (Data) -> Void, onRestart: @escaping @Sendable () -> Void = {}
+        onAudio: @escaping @Sendable (Data) -> Void, kept: KeptOutput? = nil,
+        onRestart: @escaping @Sendable () -> Void = {}
     ) throws {
         self.onAudio = onAudio
+        self.kept = kept
         self.onRestart = onRestart
         try startTap(onAudio: onAudio)
         var address = Self.defaultOutput
@@ -153,6 +157,9 @@ public final class SystemAudioCapture: @unchecked Sendable {
         guard let format = AVAudioFormat(streamDescription: &streamDescription),
             let resampler = Resampler(from: format)
         else { throw CaptureError.unsupportedFormat }
+        let kept = kept
+        let keptResampler = kept.flatMap { Resampler(from: format, rate: $0.rate) }
+        if kept != nil, keptResampler == nil { throw CaptureError.unsupportedFormat }
 
         try check("AudioDeviceCreateIOProcIDWithBlock") {
             AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, queue) {
@@ -163,6 +170,7 @@ public final class SystemAudioCapture: @unchecked Sendable {
                     let pcm = resampler.convert(buffer)
                 else { return }
                 onAudio(pcm)
+                if let kept, let pcm = keptResampler?.convert(buffer) { kept.onAudio(pcm) }
             }
         }
         try check("AudioDeviceStart") { AudioDeviceStart(aggregateID, procID) }
@@ -180,6 +188,7 @@ public final class SystemAudioCapture: @unchecked Sendable {
         AudioObjectRemovePropertyListenerBlock(
             AudioObjectID(kAudioObjectSystemObject), &processes, queue, processesChanged)
         onAudio = nil
+        kept = nil
         onRestart = nil
         stopTap()
     }

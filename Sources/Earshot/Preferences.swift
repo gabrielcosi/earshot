@@ -1,4 +1,5 @@
 import AppKit
+import EarshotCapture
 import Foundation
 import Observation
 import ServiceManagement
@@ -30,10 +31,14 @@ final class Preferences {
     var suggestSpeakerNames: Bool {
         didSet { UserDefaults.standard.set(suggestSpeakerNames, forKey: "suggestSpeakerNames") }
     }
-    /// Keeps each session's audio with its transcript in the store, both sides, as AAC (~23 MB
-    /// an hour).
+    /// Keeps each session's audio with its transcript in the store, both sides, as AAC at
+    /// `keepAudioQuality`.
     var keepAudio: Bool {
         didSet { UserDefaults.standard.set(keepAudio, forKey: "keepAudio") }
+    }
+    /// Read when a session starts: Medium and High record the audio a second time at their rate.
+    var keepAudioQuality: AudioQuality {
+        didSet { UserDefaults.standard.set(keepAudioQuality.rawValue, forKey: "keepAudioQuality") }
     }
     /// Each API engine keeps its own address, model, and key, so switching engines back and forth
     /// does not lose either set. The three fields below are the selected engine's.
@@ -134,6 +139,8 @@ final class Preferences {
         cancelSpeakerEcho = defaults.bool(forKey: "cancelSpeakerEcho")
         keepEngineLoaded = defaults.bool(forKey: "keepEngineLoaded")
         keepAudio = defaults.bool(forKey: "keepAudio")
+        keepAudioQuality =
+            defaults.string(forKey: "keepAudioQuality").flatMap(AudioQuality.init) ?? .low
         let engine =
             defaults.string(forKey: "summaryEngine").flatMap(Summarizer.Engine.init) ?? .apple
         summaryEngine = engine

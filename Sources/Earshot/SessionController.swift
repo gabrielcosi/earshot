@@ -112,8 +112,7 @@ final class SessionController {
     /// Stream time each channel's audio has been refined up to.
     @ObservationIgnored private var refinedUntil: [Channel: Double] = [:]
     @ObservationIgnored var refinements: [Task<Void, Never>] = []
-    @ObservationIgnored private var recording: Recording?
-    @ObservationIgnored private var microphoneRecording: Recording?
+    @ObservationIgnored private var recordings: SessionRecordings?
     /// The clip runs a little past the last word, so its final phoneme is not cut.
     private static let refinementTail = 0.3
     @ObservationIgnored var liveInFlight: Set<Channel> = []
@@ -193,11 +192,17 @@ final class SessionController {
         // A new canceller per session: it starts with no echo path. Nothing exists when the
         // setting is off, so headphone users' audio is never touched.
         let canceller = useMicrophone && preferences.cancelSpeakerEcho ? EchoCanceller() : nil
-        if let microphoneSink {
-            let microphoneRecording = try Recording(.microphone)
-            self.microphoneRecording = microphoneRecording
+        // The quality is read once, here: it decides what is recorded from the start.
+        let recordings = try SessionRecordings(
+            microphone: useMicrophone,
+            keeping: preferences.keepAudio ? preferences.keepAudioQuality : nil,
+            echoCancelled: canceller != nil)
+        self.recordings = recordings
+        if let microphoneSink, let microphoneRecording = recordings.microphone {
             let microphone = MicrophoneCapture()
-            try microphone.start(deviceUID: preferences.microphone) { pcm in
+            try microphone.start(
+                deviceUID: preferences.microphone, kept: Self.output(recordings.keptMicrophone)
+            ) { pcm in
                 let heard = canceller?.process(pcm) ?? pcm
                 guard !heard.isEmpty else { return }
                 microphoneSink.send(heard)
@@ -205,13 +210,13 @@ final class SessionController {
             }
             self.microphone = microphone
         }
-        let recording = try Recording(.system)
-        self.recording = recording
+        let recording = recordings.system
         let system = SystemAudioCapture(sources: Set(sources.map(\.id)))
-        try system.start { pcm in
-            systemSink.send(pcm)
-            recording.append(pcm)
-        }
+        try system.start(
+            onAudio: { pcm in
+                systemSink.send(pcm)
+                recording.append(pcm)
+            }, kept: Self.output(recordings.keptSystem))
         self.system = system
         if let canceller {
             let reference = SystemAudioCapture()
@@ -220,6 +225,10 @@ final class SessionController {
             echoReference = reference
         }
         return (systemSink, microphoneSink)
+    }
+
+    private static func output(_ recording: Recording?) -> KeptOutput? {
+        recording.map { recording in KeptOutput(rate: recording.rate, onAudio: recording.append) }
     }
 
     private func connect(models: EngineServer.Models, system: AudioSink, microphone: AudioSink?)
@@ -258,21 +267,21 @@ final class SessionController {
         }
         for listener in listeners { await listener.value }
         deadline.cancel()
-        let (recording, microphoneRecording) = (recording, microphoneRecording)
-        (self.recording, self.microphoneRecording) = (nil, nil)
+        let recordings = recordings
+        self.recordings = nil
         teardown()
-        if let recording { await relabelSpeakers(from: recording) }
+        if let recordings { await relabelSpeakers(from: recordings.system) }
         persist()
         await seal()
-        if let recording {
-            microphoneRecording?.finish()
+        if let recordings {
+            recordings.finish()
             if preferences.keepAudio, let savedID {
-                await keepAudio(system: recording, microphone: microphoneRecording, for: savedID)
-                recording.discard()
+                await keepAudio(recordings, for: savedID)
+                recordings.system.discard()
             } else {
-                lastRecording = recording
+                lastRecording = recordings.system
             }
-            microphoneRecording?.discard()
+            recordings.discardAllButSystem()
         }
         state = .idle
         if !preferences.keepEngineLoaded { engine.stop() }
@@ -353,10 +362,8 @@ final class SessionController {
     }
 
     private func teardown() {
-        recording?.discard()
-        recording = nil
-        microphoneRecording?.discard()
-        microphoneRecording = nil
+        recordings?.discard()
+        recordings = nil
         if let awake { ProcessInfo.processInfo.endActivity(awake) }
         awake = nil
         microphone?.stop()

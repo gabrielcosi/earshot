@@ -13,6 +13,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private struct State {
         var deviceUID: String?
         var onAudio: (@Sendable (Data) -> Void)?
+        var kept: KeptOutput?
         var observer: (any NSObjectProtocol)?
     }
 
@@ -32,11 +33,15 @@ public final class MicrophoneCapture: @unchecked Sendable {
         await AVCaptureDevice.requestAccess(for: .audio)
     }
 
-    /// `deviceUID` nil captures the system default input.
-    public func start(deviceUID: String?, onAudio: @escaping @Sendable (Data) -> Void) throws {
+    /// `deviceUID` nil captures the system default input. `kept` receives the same audio at its
+    /// own rate.
+    public func start(
+        deviceUID: String?, kept: KeptOutput? = nil, onAudio: @escaping @Sendable (Data) -> Void
+    ) throws {
         try state.withLockUnchecked { state in
             state.deviceUID = deviceUID
             state.onAudio = onAudio
+            state.kept = kept
             try install(state)
             state.observer = NotificationCenter.default.addObserver(
                 forName: .AVAudioEngineConfigurationChange, object: engine, queue: restarts
@@ -68,7 +73,9 @@ public final class MicrophoneCapture: @unchecked Sendable {
         if let uid = state.deviceUID, let device = AudioDevices.device(uid: uid) {
             try input.auAudioUnit.setDeviceID(device)
         }
-        guard let tap = MicrophoneTap(format: input.outputFormat(forBus: 0), onAudio: onAudio)
+        guard
+            let tap = MicrophoneTap(
+                format: input.outputFormat(forBus: 0), kept: state.kept, onAudio: onAudio)
         else { throw CaptureError.unsupportedFormat }
         input.installTap(onBus: 0, bufferSize: Self.tapFrames, format: tap.format) { buffer, _ in
             tap.receive(buffer)
@@ -82,6 +89,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
             if let observer = state.observer { NotificationCenter.default.removeObserver(observer) }
             state.observer = nil
             state.onAudio = nil
+            state.kept = nil
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
         }
@@ -94,9 +102,18 @@ struct MicrophoneTap {
     let format: AVAudioFormat
     private let resampler: Resampler
     private let onAudio: @Sendable (Data) -> Void
+    private let kept: (resampler: Resampler, onAudio: @Sendable (Data) -> Void)?
 
-    init?(format: AVAudioFormat, onAudio: @escaping @Sendable (Data) -> Void) {
+    init?(
+        format: AVAudioFormat, kept: KeptOutput? = nil, onAudio: @escaping @Sendable (Data) -> Void
+    ) {
         guard let resampler = Resampler(from: format) else { return nil }
+        if let kept {
+            guard let keptResampler = Resampler(from: format, rate: kept.rate) else { return nil }
+            self.kept = (keptResampler, kept.onAudio)
+        } else {
+            self.kept = nil
+        }
         self.format = format
         self.resampler = resampler
         self.onAudio = onAudio
@@ -104,6 +121,7 @@ struct MicrophoneTap {
 
     func receive(_ buffer: AVAudioPCMBuffer) {
         if let pcm = resampler.convert(buffer) { onAudio(pcm) }
+        if let kept, let pcm = kept.resampler.convert(buffer) { kept.onAudio(pcm) }
     }
 }
 
@@ -115,7 +133,7 @@ public enum CaptureError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .unsupportedFormat: "The capture format cannot be converted to 16 kHz mono."
+        case .unsupportedFormat: "The capture format cannot be converted to mono PCM."
         case .coreAudio(let call, let status): "\(call) failed (OSStatus \(status))."
         case .permissionDenied(let what): "\(what) access was denied in System Settings."
         case .rateMismatch(let tap, let output):

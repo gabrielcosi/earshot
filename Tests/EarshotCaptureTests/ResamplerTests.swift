@@ -17,6 +17,18 @@ import Testing
         #expect(abs(hertz - 1_000) < 20, "tone came out at \(hertz) Hz")
         #expect(output.map { abs(Int($0)) }.max() ?? 0 > 10_000, "the tone lost its level")
     }
+
+    /// Kept audio at Medium and High is the same capture resampled to their rates instead.
+    @Test(arguments: [24_000.0, 48_000.0])
+    func convertsTapBuffersToTheKeptRate(rate: Double) throws {
+        let (format, buffers) = try Tone.second(
+            rate: 44_100, channels: 2, interleaved: false, frames: 512)
+        let resampler = try #require(Resampler(from: format, rate: rate))
+        let output = Tone.samples(buffers.compactMap(resampler.convert).reduce(Data(), +))
+        #expect(abs(Double(output.count) - rate) < rate / 100, "got \(output.count) for 1 s")
+        let hertz = Tone.hertz(output, rate: rate)
+        #expect(abs(hertz - 1_000) < 20, "tone came out at \(hertz) Hz")
+    }
 }
 
 @Suite struct TranscriptAudioTests {
@@ -29,7 +41,10 @@ import Testing
         try Data(count: 32_000 * 2).write(to: microphone)
         try Data(count: 32_000 * 3).write(to: system)
         let output = directory.appending(path: "transcript.m4a")
-        try TranscriptAudio.encode(microphone: microphone, system: system, to: output)
+        try TranscriptAudio.encode(
+            microphone: .init(url: microphone, rate: 16_000),
+            system: .init(url: system, rate: 16_000),
+            quality: .high, to: output)
         let file = try AVAudioFile(forReading: output)
         #expect(file.fileFormat.channelCount == 2)
         #expect(file.fileFormat.sampleRate == 16_000)
@@ -57,7 +72,10 @@ import Testing
         try (toneOnMicrophone ? tone : silence).write(to: microphone)
         try (toneOnMicrophone ? silence : tone).write(to: system)
         let output = directory.appending(path: "transcript.m4a")
-        try TranscriptAudio.encode(microphone: microphone, system: system, to: output)
+        try TranscriptAudio.encode(
+            microphone: .init(url: microphone, rate: 16_000),
+            system: .init(url: system, rate: 16_000),
+            quality: .low, to: output)
         let peaks = try TranscriptAudio.peaks(of: output, count: 4)
         #expect(peaks.count == 4)
         #expect(peaks[0] < 0.1, "silence drew \(peaks)")
@@ -70,8 +88,9 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         #expect(throws: (any Error).self) {
             try TranscriptAudio.encode(
-                microphone: nil, system: directory.appending(path: "missing.pcm"),
-                to: directory.appending(path: "transcript.m4a"))
+                microphone: nil,
+                system: .init(url: directory.appending(path: "missing.pcm"), rate: 16_000),
+                quality: .low, to: directory.appending(path: "transcript.m4a"))
         }
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path()).isEmpty)
     }

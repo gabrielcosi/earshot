@@ -40,9 +40,9 @@ enum Tone {
         pcm.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }.map(Int16.init(littleEndian:))
     }
 
-    /// The tone's frequency as heard in `samples` at 16 kHz, from its zero crossings.
-    static func hertz(_ samples: [Int16]) -> Int {
+    /// The tone's frequency as heard in `samples` at `rate`, from its zero crossings.
+    static func hertz(_ samples: [Int16], rate: Double = 16_000) -> Int {
         let crossings = zip(samples, samples.dropFirst()).filter { ($0 < 0) != ($1 < 0) }.count
-        return crossings * 16_000 / (2 * max(samples.count, 1))
+        return crossings * Int(rate) / (2 * max(samples.count, 1))
     }
 }
