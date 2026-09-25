@@ -21,6 +21,21 @@ public enum EngineLaunch {
         public let process: Process
         /// Where the engine listens, as it reported after binding.
         public let address: URL
+
+        /// Asks the engine to exit, and kills it if it has not within `grace`. It exits on SIGTERM
+        /// only once no connection is open: its HTTP server stops listening, then waits for every
+        /// connection's worker, so an engine a client still talks to never exits on its own.
+        public func stop(grace: Duration) {
+            process.terminate()
+            let deadline = ContinuousClock.now + grace
+            while process.isRunning, ContinuousClock.now < deadline {
+                // Short against the engine's measured exits, so it adds little to them.
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            guard process.isRunning else { return }
+            kill(process.processIdentifier, SIGKILL)
+            process.waitUntilExit()
+        }
     }
 
     public static func arguments(config: URL, transcription: URL, diarization: URL?) -> [String] {

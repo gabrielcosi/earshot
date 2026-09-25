@@ -52,6 +52,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.preferences.applyDockIcon()
     }
 
+    /// A session ends before the app does: the engine does not exit while the session's
+    /// connections are open, and the transcript is saved.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard controller.state != .idle else { return .terminateNow }
+        Task {
+            await controller.finishForQuit()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         controller.discardLastRecording()
         controller.engine.stop()

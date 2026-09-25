@@ -51,6 +51,28 @@ import Testing
         #expect(!running.process.isRunning)
     }
 
+    /// An engine holding open WebSocket connections keeps running after SIGTERM, and a quit that
+    /// waited for it would hang the app.
+    @Test(.timeLimit(.minutes(1))) func anEngineThatIgnoresTerminationIsKilled() async throws {
+        let grace = Duration.milliseconds(200)
+        let running = try await launch("trap '' TERM; \(Self.ready); while :; do sleep 1; done")
+        let stopping = ContinuousClock.now
+        running.stop(grace: grace)
+        #expect(!running.process.isRunning)
+        // The margin covers the kill's delivery and the process's reaping.
+        #expect(ContinuousClock.now - stopping < grace + .seconds(1))
+    }
+
+    /// The app stops the engine from the main thread; an engine that exits must be seen to
+    /// before the grace runs out, or every quit and unload would wait all of it.
+    @MainActor @Test(.timeLimit(.minutes(1))) func anEngineThatExitsIsNotWaitedOn() async throws {
+        let grace = Duration.seconds(30)
+        let running = try await launch("\(Self.ready); exec sleep 60")
+        let stopping = ContinuousClock.now
+        running.stop(grace: grace)
+        #expect(ContinuousClock.now - stopping < grace)
+    }
+
     @Test func anEngineThatStopsBeforeItIsReadyFailsTheStart() async {
         await #expect(throws: EngineLaunch.Failure.self) { try await launch("exit 3") }
     }

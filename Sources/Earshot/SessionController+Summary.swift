@@ -41,6 +41,8 @@ extension SessionController {
     /// Every stopped session goes through here, whether stopped from the menu or ended by a lost
     /// engine: one with speakers to name asks for its naming sheet, and is summarized after it.
     func sessionEnded(byUser: Bool) {
+        // Naming and a summary cannot finish once the app is gone.
+        guard !quitting else { return }
         if let file = savedFile, let markdown = try? String(contentsOf: file, encoding: .utf8),
             !SpeakerNames.speakers(in: markdown).isEmpty
         {

@@ -23,6 +23,8 @@ final class SessionController {
     var namingRequest: NamingRequest?
     /// A session ended on its own and the menu has not been opened since.
     var needsAttention = false
+    /// The app is quitting: the session ends and saves, with nothing after it.
+    @ObservationIgnored var quitting = false
     /// Set after naming or summarizing, so views showing that file read it again.
     var changedFile: URL?
     /// The current session's summary, kept so every save writes it above the transcript.
