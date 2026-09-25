@@ -17,28 +17,30 @@ Earshot lives in the menu bar of Apple silicon Macs running macOS 26.4 or newer.
 
 1. [Download the latest DMG](https://github.com/gabrielcosi/earshot/releases/latest) and open it.
 2. Drag `Earshot.app` into Applications, then launch it.
-3. Earshot opens the Model Library. Download a transcription model, and a speaker detection model if you want speakers.
+3. Earshot opens **Settings > Models**. Download a transcription model, and a speaker detection model if you want speakers.
 
 The first time you start listening, macOS asks for two permissions:
 
 - **Microphone** lets Earshot transcribe what you say. It is only needed while **Include my microphone** is on.
 - **System Audio Recording** lets Earshot hear the other side of the call, from whatever app plays it.
 
-Earshot checks for signed updates automatically. Use **Check for Updates…** in About to check now.
+Earshot checks for signed updates automatically. Use **Check for Updates…** in the Earshot menu or in **Settings > About** to check now.
 
 ## Use
 
-Click the ear in the menu bar and choose **Start listening**. The transcript window opens and fills in as people speak. Choose **Stop** when you're done: Earshot tidies the speaker boundaries and asks you to name the speakers, with a few of their lines to read and play.
+Click the ear in the menu bar and choose **Start listening**. The transcript window opens and fills in as people speak: each finished line becomes a card, and the words still being recognized wait in a bar at the bottom. Choose **Stop** when you're done: Earshot tidies the speaker boundaries and asks you to name the speakers, with a few of their lines to read and play.
+
+The window lists your transcripts by day, with the session in progress on top. Press ⌘+ and ⌘− to change the text size, and use the switch in the toolbar to show the original, the translation, or both. Everything else is in **Settings** (⌘,).
 
 - **Spoken** in the menu sets which languages are spoken, so Earshot ignores languages it mishears in noise.
 - **Translate into** your language translates every line in another language. macOS asks to download a language pair the first time it is needed.
 - **Listening to** in the menu picks the apps to transcribe, for a call next to music or a video. It starts on all apps. Two tabs in the same browser count as one app.
 - **Include my microphone** can be turned off to transcribe a podcast or a video with nobody talking over it.
-- **Words** holds names and terms Earshot should recognize, and replacements to apply to the text.
-- **Summarize** adds an overview, decisions, and action items to a transcript's file, every time you stop if you turn that on in Settings. Apple Intelligence writes them unless you choose an endpoint.
+- **Settings > Words** holds names and terms Earshot should recognize, and replacements to apply to the text.
+- **Summarize** in the transcript's toolbar adds an overview, decisions, and action items to its file, every time you stop if you turn that on in **Settings > Summaries**. Apple Intelligence writes them unless you choose an endpoint.
 - **Keep audio** saves your microphone and what the Mac plays next to the transcript, about 23 MB an hour, so you can play back any line.
 
-Transcripts are saved to Earshot's own folder, or to a folder you choose in **Settings > Transcripts**.
+Transcripts are saved to Earshot's own folder, or to a folder you choose in **Settings > General**.
 
 ## Privacy
 
@@ -46,7 +48,7 @@ Audio never leaves your Mac. Recognition, speaker detection, and translation all
 
 Earshot goes online for three things:
 
-- **Models** download from Hugging Face when you choose them in the Model Library.
+- **Models** download from Hugging Face when you choose them in **Settings > Models**.
 - **Updates** are checked against this repository's GitHub releases.
 - **Summaries**, only when you choose an OpenAI-compatible or Anthropic endpoint instead of Apple Intelligence. The transcript text is then sent to that endpoint. Its API key is kept in your keychain.
 
@@ -58,7 +60,7 @@ Earshot goes online for three things:
 
 **A language comes out wrong.** Choose the languages that are spoken under **Spoken**. With one language chosen, Earshot transcribes only that language.
 
-**Names come out misspelled.** Add them in **Words**. Earshot listens for them and fixes them in the final text.
+**Names come out misspelled.** Add them in **Settings > Words**. Earshot listens for them and fixes them in the final text.
 
 ## Contributing
 

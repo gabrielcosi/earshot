@@ -23,11 +23,24 @@ extension SessionController {
                 try TranscriptDocument.withSummary(text, by: model, in: markdown).write(
                     to: file, atomically: true, encoding: .utf8)
             }
-            changedFile = file
+            fileEdits += 1
+            dismissSummaryFailure(file)
         } catch {
             log.error("summary failed: \(error, privacy: .public)")
-            problems.report(.summaryFailed)
+            let failure: Problem = .summaryFailed(
+                SummaryFailure(error)
+                    ?? (error as? Summarizer.Failure == .unavailable
+                        ? .appleIntelligenceUnavailable : nil))
+            failedSummaries[file] = failure
+            problems.report(failure)
         }
+    }
+
+    /// The menu's report stands for every failed summary, so it goes with the last of them.
+    func dismissSummaryFailure(_ file: URL) {
+        failedSummaries[file] = nil
+        guard failedSummaries.isEmpty else { return }
+        problems.resolve { if case .summaryFailed = $0 { true } else { false } }
     }
 
     /// A session that just ended with speakers to name, for the naming sheet.

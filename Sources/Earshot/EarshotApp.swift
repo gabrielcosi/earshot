@@ -22,9 +22,16 @@ struct EarshotApp: App {
             MainWindow()
                 .environment(delegate.controller)
                 .environment(delegate.navigation)
-                .environment(delegate.updater)
         }
         .defaultSize(width: 960, height: 680)
+        .commands { TranscriptCommands(updater: delegate.updater) }
+
+        Settings {
+            SettingsWindow()
+                .environment(delegate.controller)
+                .environment(delegate.navigation)
+                .environment(delegate.updater)
+        }
     }
 }
 
@@ -50,6 +57,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Recording.removeLeftovers()
         controller.preferences.applyDockIcon()
+        TranscriptCommands.zoomInWithEquals()
+    }
+
+    /// Opening Earshot again, from Finder, Spotlight, or the Dock, shows its window, as any app
+    /// does. False tells AppKit this was handled; with a window already visible, AppKit brings it
+    /// forward itself.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        guard !hasVisibleWindows else { return true }
+        navigation.windowRequested = true
+        return false
     }
 
     /// A session ends before the app does: the engine does not exit while the session's
@@ -75,6 +92,7 @@ struct MenuBarLabel: View {
     @Environment(SessionController.self) private var controller
     @Environment(Navigation.self) private var navigation
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Image(
@@ -84,8 +102,13 @@ struct MenuBarLabel: View {
         .task {
             if controller.preferences.keepEngineLoaded { controller.prewarm() }
             guard controller.library.selection == nil else { return }
-            navigation.section = .settings
-            navigation.browsingModels = true
+            navigation.settingsTab = .models
+            openSettings()
+            NSApp.activate()
+        }
+        .onChange(of: navigation.windowRequested) {
+            guard navigation.windowRequested else { return }
+            navigation.windowRequested = false
             openWindow(id: "main")
             NSApp.activate()
         }
@@ -95,7 +118,6 @@ struct MenuBarLabel: View {
             guard let request = controller.namingRequest else { return }
             controller.namingRequest = nil
             navigation.naming = request.file
-            navigation.section = .transcripts
             guard request.opensWindow else { return }
             openWindow(id: "main")
             NSApp.activate()
@@ -144,6 +166,9 @@ struct MenuContent: View {
     @Environment(SessionController.self) private var controller
     @Environment(Navigation.self) private var navigation
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+    /// Closes this panel: an action that brings up a window takes it out of the way.
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         @Bindable var controller = controller
@@ -155,8 +180,10 @@ struct MenuContent: View {
             }
             if controller.library.selection == nil, !controller.isRecording {
                 Button {
-                    navigation.browsingModels = true
-                    show(.settings)
+                    navigation.settingsTab = .models
+                    dismiss()
+                    openSettings()
+                    NSApp.activate()
                 } label: {
                     Label("Set Up Models…", systemImage: "arrow.down.circle")
                         .frame(maxWidth: .infinity)
@@ -187,13 +214,11 @@ struct MenuContent: View {
             .disabled(!preferences.useMicrophone || controller.state != .idle)
             LabeledContent("Listening to") { SourcesMenu().fixedSize() }
             LabeledContent("Spoken") { SpokenLanguagesMenu().fixedSize() }
-            Toggle(
-                "Translate into \(Languages.displayName(controller.primaryLanguage))",
-                isOn: $controller.translationEnabled)
+            LabeledContent("Translate into") { TranslationMenu().fixedSize() }
 
             Divider()
             HStack {
-                Button("Open Earshot") { show(.transcripts) }
+                Button("Open Earshot", action: showWindow)
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
             }
@@ -232,13 +257,14 @@ struct MenuContent: View {
                 await controller.stop()
                 return
             }
-            show(.transcripts)
+            navigation.selection = .live
+            showWindow()
             await controller.start()
         }
     }
 
-    private func show(_ section: Navigation.Section) {
-        navigation.section = section
+    private func showWindow() {
+        dismiss()
         openWindow(id: "main")
         NSApp.activate()
     }

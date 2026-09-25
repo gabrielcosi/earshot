@@ -7,6 +7,7 @@ struct ProblemRow: View {
     let problem: Problem
     @Environment(SessionController.self) private var controller
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -53,6 +54,7 @@ struct ProblemRow: View {
 
     private func download(from source: String, to target: String) {
         controller.requestDownload(from: source, to: target)
+        dismiss()
         openWindow(id: "main")
         NSApp.activate()
     }

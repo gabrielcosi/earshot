@@ -20,7 +20,8 @@ public enum Problem: Hashable, Sendable, Identifiable {
     case engineError(Channel)
     case savingFailed(String)
     case audioNotKept(String)
-    case summaryFailed
+    /// With its cause, when it is one the user can act on.
+    case summaryFailed(SummaryFailure?)
     /// Language identifiers, such as "de" and "en".
     case translationNeedsDownload(from: String, to: String)
     case translationUnsupported(from: String, to: String)
@@ -84,8 +85,8 @@ public enum Problem: Hashable, Sendable, Identifiable {
             Self.sentences("Earshot could not save the transcript.", detail)
         case .audioNotKept(let detail):
             Self.sentences("Earshot could not save the audio.", detail)
-        case .summaryFailed:
-            "Earshot could not summarize the transcript."
+        case .summaryFailed(let cause):
+            Self.sentences("Earshot could not summarize the transcript.", cause?.message ?? "")
         case .translationNeedsDownload(let source, let target):
             "Translating \(Self.name(source, in: locale)) into \(Self.name(target, in: locale)) needs Apple's language download."
         case .translationUnsupported(let source, let target):

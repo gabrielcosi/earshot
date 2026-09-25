@@ -120,18 +120,13 @@ public struct Translation: Sendable, Equatable {
     }
 }
 
-/// One paragraph as displayed: final text, plus the words still being recognized when this is the
-/// speaker's current turn.
-public struct Row: Identifiable, Sendable, Equatable {
-    public let id: String
-    public let speaker: Speaker
-    public let start: Double
+/// Words still being recognized on one channel, with their live translation, shown apart from
+/// the finished lines until their final arrives.
+public struct LiveLine: Identifiable, Sendable, Equatable {
+    public let channel: Channel
     public let text: String
-    public let pending: String?
-    /// The paragraph's latest translation. While the paragraph grows it can trail the text; the
-    /// next one replaces it.
     public let translation: String?
-    public let pendingTranslation: String?
+    public var id: Channel { channel }
 }
 
 /// The session so far: final utterances in time order plus the in-flight partial of each channel.
@@ -142,33 +137,13 @@ public struct Transcript: Sendable, Equatable {
 
     public init() {}
 
-    /// Utterances as paragraphs, with each channel's partial appended to the last row when that
-    /// row is the channel's, and in a row of its own at the end otherwise.
-    public var rows: [Row] {
-        var rows = utterances.map {
-            Row(
-                id: $0.id.uuidString, speaker: $0.speaker, start: $0.start, text: $0.text,
-                pending: nil, translation: $0.translation?.text, pendingTranslation: nil)
+    /// Each channel's words in flight, the microphone first.
+    public var liveLines: [LiveLine] {
+        [Channel.microphone, .system].compactMap { channel in
+            guard let partial = partials[channel], !partial.isEmpty else { return nil }
+            return LiveLine(
+                channel: channel, text: partial, translation: liveTranslations[channel]?.text)
         }
-        for channel in Channel.allCases {
-            guard let partial = partials[channel], !partial.isEmpty else { continue }
-            let live = liveTranslations[channel]?.text
-            if let last = rows.last, Self.channel(of: last.speaker) == channel {
-                rows[rows.count - 1] = Row(
-                    id: last.id, speaker: last.speaker, start: last.start, text: last.text,
-                    pending: partial, translation: last.translation, pendingTranslation: live)
-            } else {
-                let speaker =
-                    utterances.last { Self.channel(of: $0.speaker) == channel }?.speaker
-                    ?? Self.speaker(nil, channel)
-                rows.append(
-                    Row(
-                        id: "pending-\(channel.rawValue)", speaker: speaker,
-                        start: utterances.last?.end ?? 0, text: "", pending: partial,
-                        translation: nil, pendingTranslation: live))
-            }
-        }
-        return rows
     }
 
     public mutating func applyPartial(_ delta: String, on channel: Channel) {
@@ -372,13 +347,6 @@ public struct Transcript: Sendable, Equatable {
                         speaker: speaker, start: word.start, end: word.end, text: word.word,
                         words: [word]))
             }
-        }
-    }
-
-    private static func channel(of speaker: Speaker) -> Channel {
-        switch speaker {
-        case .me: .microphone
-        case .remote, .unknown: .system
         }
     }
 

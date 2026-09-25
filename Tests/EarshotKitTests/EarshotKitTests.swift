@@ -198,24 +198,24 @@ import Testing
         #expect(transcript.utterances.map(\.text) == ["So I think", "okay", "we should"])
     }
 
-    @Test func partialGrowsAtTheEndOfTheSpeakersParagraph() {
+    /// Words still being recognized stay out of the finished lines until their final arrives,
+    /// so a line never changes under the reader.
+    @Test func aPartialStaysOutOfTheSpeakersParagraph() {
         var transcript = Transcript()
         let (text, words) = final("So I think", at: 0, speaker: 1)
         transcript.applyFinal(transcript: text, words: words, on: .system)
         transcript.applyPartial("we sho", on: .system)
-        #expect(transcript.rows.count == 1)
-        #expect(transcript.rows.first?.text == "So I think")
-        #expect(transcript.rows.first?.pending == "we sho")
+        #expect(TranscriptLine.lines(in: transcript).map(\.text) == ["So I think"])
+        #expect(
+            transcript.liveLines == [LiveLine(channel: .system, text: "we sho", translation: nil)])
     }
 
-    @Test func partialAfterAnotherSpeakerStartsANewRow() {
+    @Test func eachSpeakingChannelHasItsOwnLiveLineMicrophoneFirst() {
         var transcript = Transcript()
-        let (text, words) = final("So I think", at: 0, speaker: 1)
-        transcript.applyFinal(transcript: text, words: words, on: .system)
+        transcript.applyPartial("so we", on: .system)
         transcript.applyPartial("sounds", on: .microphone)
-        #expect(transcript.rows.map(\.speaker) == [.remote(slot: 1), .me])
-        #expect(transcript.rows.last?.text.isEmpty == true)
-        #expect(transcript.rows.last?.pending == "sounds")
+        #expect(transcript.liveLines.map(\.channel) == [.microphone, .system])
+        #expect(transcript.liveLines.map(\.text) == ["sounds", "so we"])
     }
 }
 
@@ -225,18 +225,19 @@ import Testing
         transcript.applyPartial("Ich glaube", on: .system)
         transcript.setLiveTranslation(
             Translation(sourceText: "Ich glaube", text: "I think"), on: .system)
-        #expect(transcript.rows.last?.pendingTranslation == "I think")
+        #expect(transcript.liveLines.last?.translation == "I think")
         transcript.applyPartial(" wir", on: .system)
-        #expect(transcript.rows.last?.pendingTranslation == "I think")
+        #expect(transcript.liveLines.last?.translation == "I think")
     }
 
     @Test func liveTranslationOfAnAbandonedPartialIsDropped() {
         var transcript = Transcript()
         transcript.applyPartial("Ich glaube", on: .system)
         transcript.applyFinal(transcript: "Ich glaube", words: [], on: .system)
+        transcript.applyPartial("Wie", on: .system)
         transcript.setLiveTranslation(
             Translation(sourceText: "Ich glaube", text: "I think"), on: .system)
-        #expect(transcript.rows.last?.pendingTranslation == nil)
+        #expect(transcript.liveLines == [LiveLine(channel: .system, text: "Wie", translation: nil)])
     }
 
     @Test func finalClearsTheLiveTranslation() {
@@ -246,7 +247,8 @@ import Testing
         transcript.applyFinal(
             transcript: "Hallo", words: [Word(word: "Hallo", start: 0, end: 1, speaker: 1)],
             on: .system)
-        #expect(transcript.rows.last?.pendingTranslation == nil)
+        transcript.applyPartial("Wie", on: .system)
+        #expect(transcript.liveLines == [LiveLine(channel: .system, text: "Wie", translation: nil)])
     }
 
     @Test func aSlowTranslationOfAnOlderParagraphDoesNotReplaceANewerOne() throws {
@@ -261,7 +263,7 @@ import Testing
         transcript.setTranslation(
             Translation(sourceText: "Hallo zusammen", text: "Hello everyone"), for: id)
         transcript.setTranslation(Translation(sourceText: "Hallo", text: "Hello"), for: id)
-        #expect(transcript.rows.first?.translation == "Hello everyone")
+        #expect(transcript.utterances.first?.translation?.text == "Hello everyone")
     }
 
     @Test func aParagraphKeepsShowingItsPreviousTranslationWhileItGrows() throws {
@@ -274,7 +276,7 @@ import Testing
         transcript.applyFinal(
             transcript: "zusammen", words: [Word(word: "zusammen", start: 2, end: 3, speaker: 1)],
             on: .system)
-        #expect(transcript.rows.first?.translation == "Hello")
+        #expect(transcript.utterances.first?.translation?.text == "Hello")
         #expect(transcript.utterances.first?.currentTranslation == nil)
     }
 }

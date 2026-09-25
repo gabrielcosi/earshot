@@ -5,9 +5,7 @@ public enum MarkdownExport {
         _ transcript: Transcript, startedAt: Date, names: [Speaker: String] = [:],
         rules: WordRules? = nil
     ) -> String {
-        var lines = [
-            "# Transcript \(startedAt.formatted(date: .abbreviated, time: .shortened))", "",
-        ]
+        var lines = ["# \(title(for: startedAt))", ""]
         for utterance in transcript.utterances {
             let name = names[utterance.speaker] ?? utterance.speaker.label
             let text = rules?.apply(utterance.text) ?? utterance.text
@@ -33,10 +31,31 @@ public enum MarkdownExport {
             : String(format: "%02d:%02d%@", minutes, secs, fraction)
     }
 
+    /// The title a transcript gets when it is written.
+    public static func title(for date: Date) -> String {
+        "Transcript \(date.formatted(date: .abbreviated, time: .shortened))"
+    }
+
+    /// Whether `title` is still the one Earshot wrote, judged against the start time the file's
+    /// name records rather than by how the title reads.
+    public static func hasDefaultTitle(_ title: String, filename: String) -> Bool {
+        date(fromFilename: filename).map { title == self.title(for: $0) } ?? false
+    }
+
     public static func filename(for date: Date) -> String {
+        "\(filenameFormatter.string(from: date)) transcript.md"
+    }
+
+    /// When the session in a file named by `filename(for:)` started, to the minute.
+    public static func date(fromFilename name: String) -> Date? {
+        guard name.hasSuffix(" transcript.md") else { return nil }
+        return filenameFormatter.date(from: String(name.dropLast(" transcript.md".count)))
+    }
+
+    private static var filenameFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HHmm"
-        return "\(formatter.string(from: date)) transcript.md"
+        return formatter
     }
 }

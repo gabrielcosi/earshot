@@ -109,7 +109,6 @@ struct WordsView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Words")
     }
 
     private func addTerm() {

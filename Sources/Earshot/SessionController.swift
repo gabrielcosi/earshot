@@ -25,12 +25,13 @@ final class SessionController {
     var needsAttention = false
     /// The app is quitting: the session ends and saves, with nothing after it.
     @ObservationIgnored var quitting = false
-    /// Set after naming or summarizing, so views showing that file read it again.
-    var changedFile: URL?
+    /// Counts names and summaries written to files, so views showing one read it again.
+    var fileEdits = 0
     /// The current session's summary, kept so every save writes it above the transcript.
     var summary: TranscriptDocument.Summary?
-    /// Transcripts being summarized right now.
+    /// Transcripts being summarized right now, and those whose last summary failed.
     var summarizing: Set<URL> = []
+    var failedSummaries: [URL: Problem] = [:]
     var names: [Speaker: String] = [:]
     /// What keeps Earshot from working right now, shown in the menu.
     var problems = Problems()
@@ -86,7 +87,7 @@ final class SessionController {
     }
     @ObservationIgnored private var clients: [Channel: RealtimeClient] = [:]
     @ObservationIgnored private var listeners: [Task<Void, Never>] = []
-    @ObservationIgnored private var startedAt = Date.now
+    private(set) var startedAt = Date.now
     @ObservationIgnored let translator = Translator()
     /// Source text last sent for translation per utterance, so each version is tried once.
     @ObservationIgnored var attempted: [UUID: String] = [:]
@@ -275,7 +276,7 @@ final class SessionController {
             try? SpeakerNames.rename(in: markdown, labels).write(
                 to: file, atomically: true, encoding: .utf8)
         }
-        changedFile = file
+        fileEdits += 1
     }
 
     func displayName(_ speaker: Speaker) -> String {

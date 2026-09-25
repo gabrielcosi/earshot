@@ -177,18 +177,18 @@ final class Preferences {
         return url
     }
 
-    /// While the main window is open the app is in the Dock and ⌘Tab like any app with a window,
-    /// whatever `showDockIcon` says.
-    var mainWindowOpen = false {
+    /// While the main window or Settings is open the app is in the Dock and ⌘Tab like any app
+    /// with a window, whatever `showDockIcon` says.
+    var openWindows = 0 {
         didSet { applyDockIcon() }
     }
 
     func applyDockIcon() {
         let policy: NSApplication.ActivationPolicy =
-            showDockIcon || mainWindowOpen ? .regular : .accessory
+            showDockIcon || openWindows > 0 ? .regular : .accessory
         guard NSApp.activationPolicy() != policy else { return }
         NSApp.setActivationPolicy(policy)
         // An app that turns regular while active shows in ⌘Tab only once activated again.
-        if policy == .regular, mainWindowOpen { NSApp.activate() }
+        if policy == .regular, openWindows > 0 { NSApp.activate() }
     }
 }
