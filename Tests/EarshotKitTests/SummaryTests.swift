@@ -40,15 +40,11 @@ import Testing
         #expect(try OpenAIChat.content(of: data) == "Notes")
     }
 
-    @Test func renamingASpeakerAlsoRenamesTheSummary() {
-        let markdown = TranscriptDocument.withSummary(
-            "Speaker 2 agreed to ship. Speaker 21 did not.", by: "m",
-            in: "# Transcript\n\n**Speaker 2** [00:01]: Ship it.\n")
-        let renamed = SpeakerNames.rename(in: markdown, ["Speaker 2": "John Doe"])
+    @Test func renamingMentionsChangesOnlyWholeLabels() {
         #expect(
-            TranscriptDocument(markdown: renamed).summary?.text
+            SpeakerNames.renameMentions(
+                in: "Speaker 2 agreed to ship. Speaker 21 did not.", ["Speaker 2": "John Doe"])
                 == "John Doe agreed to ship. Speaker 21 did not.")
-        #expect(renamed.contains("**John Doe** [00:01]"))
     }
 }
 

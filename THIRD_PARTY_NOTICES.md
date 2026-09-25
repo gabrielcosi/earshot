@@ -7,6 +7,7 @@
 - **[webrtc-audio-processing](https://gitlab.freedesktop.org/pulseaudio/webrtc-audio-processing)**, the WebRTC audio processing module (AEC3) packaged by the PulseAudio project, BSD 3-Clause License (Google and the WebRTC project authors). Built from source by `mise run engine:aec` and linked into the app as a static library for the "Cancel speaker echo" setting.
 - **[Abseil](https://github.com/abseil/abseil-cpp)** by Google, Apache License 2.0. Built as part of webrtc-audio-processing and linked into the same library.
 - **[Sparkle](https://sparkle-project.org)**, MIT License. The update framework, in `Earshot.app/Contents/Frameworks`.
+- **[GRDB.swift](https://github.com/groue/GRDB.swift)** by Gwendal Roué, MIT License. The SQLite toolkit behind the transcript store, linked into the app. SQLite itself is the copy that ships with macOS.
 
 The license texts of all of these are copied into `Earshot.app/Contents/Resources/Licenses`, which About opens.
 

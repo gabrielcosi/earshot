@@ -11,7 +11,7 @@ Earshot lives in the menu bar of Apple silicon Macs running macOS 26.4 or newer.
 - **Nothing leaves your Mac.** Speech recognition and speaker detection run on the Mac's GPU with NVIDIA's Nemotron models. Translation and summaries use Apple's on-device models.
 - **You and everyone else.** Your microphone is always "Me". Everything the Mac plays is split into up to eight speakers, and you name them when you stop.
 - **Many languages at once.** Recognition follows the language each person speaks, and anything not in your language is translated.
-- **Plain files.** Every transcript is a Markdown file, saved after each finished line.
+- **Plain files.** Every transcript is saved after each finished line and written out as a Markdown file when the session ends.
 
 ## Install
 
@@ -37,14 +37,14 @@ The window lists your transcripts by day, with the session in progress on top. P
 - **Listening to** in the menu picks the apps to transcribe, for a call next to music or a video. It starts on all apps. Two tabs in the same browser count as one app.
 - **Include my microphone** can be turned off to transcribe a podcast or a video with nobody talking over it.
 - **Settings > Words** holds names and terms Earshot should recognize, and replacements to apply to the text.
-- **Summarize** in the transcript's toolbar adds an overview, decisions, and action items to its file, every time you stop if you turn that on in **Settings > Summaries**. Apple Intelligence writes them unless you choose an endpoint.
-- **Keep audio** saves your microphone and what the Mac plays next to the transcript, about 23 MB an hour. The transcript then opens with a player: click the waveform, or a line's play button, to listen from there. Space plays and pauses.
+- **Summarize** in the transcript's toolbar adds an overview, decisions, and action items above it, every time you stop if you turn that on in **Settings > Summaries**. Apple Intelligence writes them unless you choose an endpoint.
+- **Keep audio** keeps a recording of your microphone and the Mac's sound with each transcript (about 23 MB an hour). The transcript then opens with a player: click the waveform, or a line's play button, to listen from there. Space plays and pauses. **Show Audio in Finder** and **Export Audio…** are under **Show in Finder** in the toolbar.
 
-Transcripts are saved to Earshot's own folder, or to a folder you choose in **Settings > General**.
+Earshot keeps your transcripts in its own library and writes a Markdown copy of each one to Earshot's folder, or to a folder you choose in **Settings > General**. It keeps the copy up to date as you name speakers or add a summary. Once you change or delete a copy outside Earshot, Earshot leaves it alone and says so above the transcript; **Export…** writes a new one.
 
 ## Privacy
 
-Audio never leaves your Mac. Recognition, speaker detection, and translation all run locally, and audio is only written to disk when **Keep audio** is on.
+Audio never leaves your Mac. Recognition, speaker detection, and translation all run locally, and audio is only kept after a session when **Keep audio** is on; until you name the speakers, the session's recording waits in a temporary file so you can listen to them. Transcripts and kept audio stay on your Mac, in Earshot's own storage.
 
 Earshot goes online for three things:
 

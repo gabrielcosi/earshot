@@ -13,10 +13,10 @@ struct TranscriptSidebar: View {
             if controller.hasLiveSession {
                 LiveItem().tag(Navigation.Item.live)
             }
-            ForEach(TranscriptDay.grouped(listed, by: \.date), id: \.day) { group in
+            ForEach(TranscriptDay.grouped(listed, by: \.startedAt), id: \.day) { group in
                 Section(Self.heading(group.day)) {
                     ForEach(group.items) { entry in
-                        SavedItem(entry: entry).tag(Navigation.Item.saved(entry.file))
+                        SavedItem(entry: entry).tag(Navigation.Item.saved(entry.id))
                     }
                 }
             }
@@ -36,12 +36,12 @@ struct TranscriptSidebar: View {
         }
     }
 
-    /// The session being recorded is on top already; its file joins the list when it ends.
-    private var listed: [SavedTranscripts.Entry] {
-        guard controller.state != .idle, let live = controller.savedFile else {
+    /// The session being recorded is on top already; it joins the list when it ends.
+    private var listed: [TranscriptStore.Entry] {
+        guard controller.state != .idle, let live = controller.savedID else {
             return saved.entries
         }
-        return saved.entries.filter { $0.file != live }
+        return saved.entries.filter { $0.id != live }
     }
 
     private static func heading(_ day: TranscriptDay) -> String {
@@ -85,10 +85,10 @@ private struct LiveItem: View {
 }
 
 private struct SavedItem: View {
-    let entry: SavedTranscripts.Entry
+    let entry: TranscriptStore.Entry
 
     var body: some View {
-        let time = entry.date.formatted(date: .omitted, time: .shortened)
+        let time = entry.startedAt.formatted(date: .omitted, time: .shortened)
         let length = entry.length.map { TranscriptLength.text($0) }
         VStack(alignment: .leading, spacing: 2) {
             Text(entry.title ?? time).lineLimit(1)

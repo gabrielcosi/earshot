@@ -4,52 +4,48 @@ import Testing
 @testable import EarshotKit
 
 @Suite struct TranscriptLineTests {
-    private let saved = """
-        # Transcript 24. Sep 2026 at 14:18
+    private let store: TranscriptStore
+    private let id = UUID()
 
-        **Speaker 2** [00:03.25]: Let's start.
-        > Fangen wir an.
+    init() throws {
+        store = try TranscriptStore.inMemory()
+    }
 
-        **Me** [00:05.00]: Sure.
-
-        **Speaker 1** [00:07.00]: Hi all.
-
-        **Unknown speaker** [00:09.00]: (music)
-
-        **Speaker 2** [00:11.00]: Right.
-
-        """
-
-    @Test func savedLinesKeepEverythingTheFileHolds() {
-        let lines = TranscriptLine.lines(in: TranscriptDocument(markdown: saved))
-        #expect(
-            lines.map(\.speaker) == [
-                "Speaker 2", "Me", "Speaker 1", "Unknown speaker", "Speaker 2",
-            ])
-        #expect(lines.map(\.start) == [3.25, 5, 7, 9, 11])
-        #expect(lines.first?.text == "Let's start.")
-        #expect(lines.first?.translation == "Fangen wir an.")
-        #expect(lines.dropFirst().first?.translation == nil)
+    private func stored(_ utterances: [Utterance]) throws -> StoredTranscript {
+        try store.saveLive(id, startedAt: .now, utterances: utterances)
+        return try #require(try store.view(id))
     }
 
     /// Colours follow first appearance, so they match the live session, whose diarizer numbers
     /// speakers the same way; "Me" and speech with no speaker have colours of their own.
-    @Test func voicesFollowFirstAppearance() {
-        let lines = TranscriptLine.lines(in: TranscriptDocument(markdown: saved))
+    @Test func voicesFollowFirstAppearance() throws {
+        let lines = TranscriptLine.lines(
+            in: try stored([
+                Utterance(speaker: .remote(slot: 2), start: 3, end: 4, text: "a"),
+                Utterance(speaker: .me, start: 5, end: 6, text: "b"),
+                Utterance(speaker: .remote(slot: 1), start: 7, end: 8, text: "c"),
+                Utterance(speaker: .unknown, start: 9, end: 10, text: "d"),
+                Utterance(speaker: .remote(slot: 2), start: 11, end: 12, text: "e"),
+            ]))
         #expect(lines.map(\.voice) == [.other(0), .me, .other(1), .unknown, .other(0)])
     }
 
-    @Test func badgesShowTheSpeakerNumberOrTheNamesFirstLetter() {
-        let markdown =
-            "**Speaker 3** [00:01]: a\n\n**Me** [00:02]: b\n\n**ada** [00:03]: c\n\n"
-            + "**Unknown speaker** [00:04]: d\n\n**Remote** [00:05]: e\n"
-        let lines = TranscriptLine.lines(in: TranscriptDocument(markdown: markdown))
+    @Test func badgesShowTheSpeakerNumberOrTheNamesFirstLetter() throws {
+        _ = try stored([
+            Utterance(speaker: .remote(slot: 3), start: 1, end: 2, text: "a"),
+            Utterance(speaker: .me, start: 2, end: 3, text: "b"),
+            Utterance(speaker: .remote(slot: 1), start: 3, end: 4, text: "c"),
+            Utterance(speaker: .unknown, start: 4, end: 5, text: "d"),
+            Utterance(speaker: .remote(slot: 0), start: 5, end: 6, text: "e"),
+        ])
+        try store.rename(id, [.remote(slot: 1): "ada"])
+        let lines = TranscriptLine.lines(in: try #require(try store.view(id)))
         #expect(lines.map(\.badge) == ["3", "M", "A", "?", "R"])
     }
 
-    /// The window draws a session the same way before and after it is saved: every line, its
-    /// speaker's name and colour, its time, the tidied text, and its translation survive the file.
-    @Test func aSessionReadsTheSameLiveAndSaved() {
+    /// The window draws a session the same way while it is recorded and once it is stored: every
+    /// line, its speaker's name and colour, its time, the tidied text, and its translation.
+    @Test func aSessionReadsTheSameLiveAndStored() throws {
         var transcript = Transcript()
         transcript.applyFinal(
             transcript: "uh Hallo zusammen",
@@ -69,18 +65,15 @@ import Testing
         let names: [Speaker: String] = [.remote(slot: 1): "Ada"]
         let rules = WordRules()
 
+        _ = try stored(transcript.utterances)
+        try store.setTranslation("Hello everyone", of: first.text, language: "en", for: first.id)
+        try store.rename(id, names)
         let live = TranscriptLine.lines(in: transcript, names: names, rules: rules)
-        let markdown = MarkdownExport.render(
-            transcript, startedAt: .now, names: names, rules: rules)
-        let reread = TranscriptLine.lines(in: TranscriptDocument(markdown: markdown))
+        let saved = TranscriptLine.lines(in: try #require(try store.view(id)), rules: rules)
 
         #expect(live.map(\.text) == ["Hallo zusammen", "Hi", "Moin"])
         #expect(live.map(\.speaker) == ["Speaker 2", "Me", "Ada"])
         #expect(live.map(\.voice) == [.other(0), .me, .other(1)])
-        #expect(reread.map(\.speaker) == live.map(\.speaker))
-        #expect(reread.map(\.voice) == live.map(\.voice))
-        #expect(reread.map(\.start) == live.map(\.start))
-        #expect(reread.map(\.text) == live.map(\.text))
-        #expect(reread.map(\.translation) == live.map(\.translation))
+        #expect(saved == live)
     }
 }

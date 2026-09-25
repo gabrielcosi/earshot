@@ -23,7 +23,7 @@
       semanticCommitType: "build",
     },
     {
-      description: "Sparkle ships inside the app and installs every update",
+      description: "Sparkle and GRDB ship inside the app",
       matchManagers: ["swift"],
       semanticCommitType: "fix",
     },

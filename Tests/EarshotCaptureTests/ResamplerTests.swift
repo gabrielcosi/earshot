@@ -39,12 +39,10 @@ import Testing
     @Test func keptAudioIsFoundOnlyWhenItExists() throws {
         let directory = try Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let transcript = directory.appending(path: "2026-09-25 1701 transcript.md")
-        #expect(TranscriptAudio.kept(for: transcript) == nil)
-        try Data().write(to: directory.appending(path: "2026-09-25 1701 transcript.m4a"))
-        #expect(
-            TranscriptAudio.kept(for: transcript)?.lastPathComponent
-                == "2026-09-25 1701 transcript.m4a")
+        #expect(TranscriptAudio.kept(nil, in: directory) == nil)
+        #expect(TranscriptAudio.kept("kept.m4a", in: directory) == nil)
+        try Data().write(to: directory.appending(path: "kept.m4a"))
+        #expect(TranscriptAudio.kept("kept.m4a", in: directory)?.lastPathComponent == "kept.m4a")
     }
 
     /// A second of silence then a second of tone, on either side: the waveform is flat, then full.

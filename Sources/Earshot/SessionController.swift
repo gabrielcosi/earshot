@@ -16,7 +16,16 @@ final class SessionController {
 
     private(set) var state = State.idle
     var transcript = Transcript()
-    private(set) var savedFile: URL?
+    /// Every transcript; the Markdown files are copies written from it.
+    @ObservationIgnored let store: TranscriptStore
+    /// The current session's transcript in the store; nil until its first line is stored.
+    private(set) var savedID: UUID?
+    /// The current session's id in the store, from its start.
+    @ObservationIgnored private var sessionID = UUID()
+    /// The current session has ended in the store; what changes after it is exported.
+    @ObservationIgnored var sealed = false
+    /// What the store holds of the session, so each final writes only what changed.
+    @ObservationIgnored private var persisted: [Utterance] = []
     /// The session that just ended, kept until its speakers are named so their lines can be
     /// played; deleted then, at the next start, or when the app quits.
     var lastRecording: Recording?
@@ -25,21 +34,20 @@ final class SessionController {
     var needsAttention = false
     /// The app is quitting: the session ends and saves, with nothing after it.
     @ObservationIgnored var quitting = false
-    /// Counts names and summaries written to files, so views showing one read it again.
-    var fileEdits = 0
-    /// The current session's summary, kept so every save writes it above the transcript.
-    var summary: TranscriptDocument.Summary?
     /// Transcripts being summarized right now, and those whose last summary failed.
-    var summarizing: Set<URL> = []
-    var failedSummaries: [URL: Problem] = [:]
+    var summarizing: Set<UUID> = []
+    var failedSummaries: [UUID: Problem] = [:]
+    /// Whether each transcript's Markdown file is up to date, as last checked.
+    var exports: [UUID: TranscriptExporter.Status] = [:]
+    /// Transcripts being exported, and those changed again since their export started.
+    @ObservationIgnored var exportRuns: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored var exportAgain: Set<UUID> = []
     var names: [Speaker: String] = [:]
     /// What keeps Earshot from working right now, shown in the menu.
     var problems = Problems()
+    /// Applied wherever text is shown or written; a change reaches each file at its next export.
     var rules: WordRules {
-        didSet {
-            UserDefaults.standard.set(try? JSONEncoder().encode(rules), forKey: "wordRules")
-            save()
-        }
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(rules), forKey: "wordRules") }
     }
     /// The languages spoken in what the user transcribes; empty means any.
     var spokenLanguages: [String] {
@@ -111,6 +119,8 @@ final class SessionController {
     private static let commitTimeout = Duration.seconds(5)
 
     init() {
+        let (store, storeProblem) = Self.openStore()
+        self.store = store
         let defaults = UserDefaults.standard
         spokenLanguages = defaults.stringArray(forKey: "spokenLanguages") ?? []
         rules =
@@ -122,6 +132,7 @@ final class SessionController {
         translationEnabled = defaults.object(forKey: "translationEnabled") as? Bool ?? true
         Task { translationLanguages = await translator.supportedLanguages() }
         engine.onExit = { [weak self] in self?.engineExited() }
+        if let storeProblem { problems.report(storeProblem) }
     }
 
     /// Starts capturing at once. The engine may still be loading: audio waits in the sinks and
@@ -146,8 +157,10 @@ final class SessionController {
             refinedUntil = [:]
             refinements = []
             names = [:]
-            summary = nil
-            savedFile = nil
+            savedID = nil
+            sessionID = UUID()
+            sealed = false
+            persisted = []
             startedAt = .now
 
             let (systemSink, microphoneSink) = try startCapture(microphone: useMicrophone)
@@ -243,44 +256,39 @@ final class SessionController {
         let (recording, microphoneRecording) = (recording, microphoneRecording)
         (self.recording, self.microphoneRecording) = (nil, nil)
         teardown()
+        if let recording { await relabelSpeakers(from: recording) }
+        persist()
+        await seal()
         if let recording {
-            await relabelSpeakers(from: recording)
-            save()
             microphoneRecording?.finish()
-            if preferences.keepAudio, let savedFile {
-                await keepAudio(system: recording, microphone: microphoneRecording, for: savedFile)
+            if preferences.keepAudio, let savedID {
+                await keepAudio(system: recording, microphone: microphoneRecording, for: savedID)
                 recording.discard()
             } else {
                 lastRecording = recording
             }
             microphoneRecording?.discard()
         }
-        save()
         state = .idle
         if !preferences.keepEngineLoaded { engine.stop() }
         sessionEnded(byUser: byUser)
     }
 
-    /// Applies names to a saved transcript. The session still open in the app keeps them as speaker
-    /// names, so saving again writes them too; any other transcript is rewritten on disk.
-    func name(speakers labels: [String: String], in file: URL) {
-        if file == savedFile {
-            for utterance in transcript.utterances {
-                let label = displayName(utterance.speaker)
-                if let name = labels[label]?.trimmingCharacters(in: .whitespaces), !name.isEmpty {
-                    names[utterance.speaker] = name
-                }
-            }
-            save()
-        } else if let markdown = try? String(contentsOf: file, encoding: .utf8) {
-            try? SpeakerNames.rename(in: markdown, labels).write(
-                to: file, atomically: true, encoding: .utf8)
+    /// Names a transcript's speakers in the store, and in the session still open in the app.
+    func name(speakers names: [Speaker: String], in transcript: UUID) {
+        do {
+            try store.rename(transcript, names)
+        } catch {
+            reportSavingFailed(error)
+            return
         }
-        fileEdits += 1
-    }
-
-    func displayName(_ speaker: Speaker) -> String {
-        names[speaker] ?? speaker.label
+        if transcript == savedID {
+            for (speaker, name) in names {
+                let name = name.trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty { self.names[speaker] = name }
+            }
+        }
+        scheduleExport(transcript)
     }
 
     private func connect(_ channel: Channel, diarize: Bool, to endpoint: EngineEndpoint)
@@ -308,7 +316,7 @@ final class SessionController {
             translateLive(channel)
         case .final(let text, let words):
             let final = transcript.applyFinal(transcript: text, words: words, on: channel)
-            save()
+            persist()
             translatePending()
             refine(final, on: channel)
         case .error(let message):
@@ -348,7 +356,7 @@ final class SessionController {
                         Word(word: $0.word, start: $0.start + start, end: $0.end + start)
                     }
                     transcript.refine(final, with: shifted)
-                    save()
+                    persist()
                     translatePending()
                 } catch {
                     log.error("refinement failed: \(error, privacy: .public)")
@@ -375,25 +383,18 @@ final class SessionController {
         listeners = []
     }
 
-    /// Rewrites the session's Markdown file; called after every final so a crash loses nothing.
-    func save() {
+    /// Writes the session's paragraphs to the store; called after every final, so a crash loses
+    /// nothing. The Markdown file is written when the session ends.
+    func persist() {
         guard !transcript.utterances.isEmpty else { return }
-        let directory = preferences.transcriptsFolder
-        let file = directory.appending(path: MarkdownExport.filename(for: startedAt))
         do {
-            try FileManager.default.createDirectory(
-                at: directory, withIntermediateDirectories: true)
-            var markdown = MarkdownExport.render(
-                transcript, startedAt: startedAt, names: names, rules: rules)
-            if let summary {
-                markdown = TranscriptDocument.withSummary(
-                    summary.text, by: summary.model, in: markdown)
-            }
-            try markdown.write(to: file, atomically: true, encoding: .utf8)
-            savedFile = file
+            try store.saveLive(
+                sessionID, startedAt: startedAt, utterances: transcript.utterances,
+                previous: persisted)
+            persisted = transcript.utterances
+            if savedID != sessionID { savedID = sessionID }
         } catch {
-            log.error("saving failed: \(error, privacy: .public)")
-            problems.report(.savingFailed(Self.actionable(error)))
+            reportSavingFailed(error)
         }
     }
 }

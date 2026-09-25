@@ -24,7 +24,7 @@ extension SessionController {
             log.notice(
                 "relabelled \(pcm.count / 32_000) s of audio: \(turns.count) turns, \(Set(turns.map(\.speaker)).count) speakers"
             )
-            save()
+            persist()
             translatePending()
         } catch {
             log.error("speaker relabelling failed: \(error, privacy: .public)")
@@ -35,21 +35,29 @@ extension SessionController {
         lastRecording?.clip(from: start, seconds: seconds)
     }
 
-    /// Encoding an hour takes a while; it runs off the main actor.
-    func keepAudio(system: Recording, microphone: Recording?, for transcript: URL) async {
+    /// Encoding an hour takes a while; it runs off the main actor. The audio goes into the
+    /// store's folder, never into the transcripts folder.
+    func keepAudio(system: Recording, microphone: Recording?, for transcript: UUID) async {
         let (systemURL, microphoneURL) = (system.url, microphone?.url)
-        let destination = TranscriptAudio.file(for: transcript)
+        let name = "\(transcript.uuidString).m4a"
+        let destination = Self.audioFolder.appending(path: name)
         do {
             try await Task.detached(priority: .utility) {
+                try FileManager.default.createDirectory(
+                    at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try TranscriptAudio.encode(
                     microphone: microphoneURL, system: systemURL, to: destination)
             }.value
-            // A transcript opened while this ran shows its player now.
-            fileEdits += 1
+            try store.setAudio(name, for: transcript)
         } catch {
             log.error("keeping the audio failed: \(error, privacy: .public)")
             problems.report(.audioNotKept(Self.actionable(error)))
         }
+    }
+
+    /// A stored transcript's kept audio, or nil when none was kept or it is gone.
+    func keptAudio(_ transcript: StoredTranscript?) -> URL? {
+        TranscriptAudio.kept(transcript?.audio, in: Self.audioFolder)
     }
 
     func discardLastRecording() {

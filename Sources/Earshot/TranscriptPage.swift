@@ -1,4 +1,3 @@
-import EarshotCapture
 import EarshotKit
 import SwiftUI
 
@@ -10,23 +9,21 @@ struct TranscriptPage: View {
     @AppStorage(TranscriptSettings.textSize) private var storedSize = TranscriptTextSize.standard
     @AppStorage(TranscriptSettings.display) private var display = TranslationDisplay.both
     @State private var lines: [TranscriptLine] = []
-    /// A saved transcript as read from its file; nil until read, or when it cannot be read.
-    @State private var document: TranscriptDocument?
+    /// The transcript as stored, kept current as the store changes; nil until read, and for a
+    /// live session until its first line is stored.
+    @State private var stored: StoredTranscript?
     @State private var unreadable = false
-    /// The saved transcript's kept audio, when there is some.
+    /// The stored transcript's kept audio, when there is some.
     @State private var player: TranscriptPlayer?
 
     private var isLive: Bool { item == .live }
 
-    private var file: URL? {
+    /// The transcript in the store: for the live session, once its first line is stored.
+    private var transcript: UUID? {
         switch item {
-        case .live: controller.savedFile
-        case .saved(let file): file
+        case .live: controller.savedID
+        case .saved(let transcript): transcript
         }
-    }
-
-    private var summary: TranscriptDocument.Summary? {
-        isLive ? controller.summary : document?.summary
     }
 
     private var listening: Bool {
@@ -37,7 +34,7 @@ struct TranscriptPage: View {
         let playing = playingLine
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 6) {
-                if let summary {
+                if let summary = stored?.summary {
                     SummaryView(summary: summary).padding(.bottom, 12)
                 }
                 ForEach(lines) { line in
@@ -56,6 +53,7 @@ struct TranscriptPage: View {
         .safeAreaBar(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
                 failureBanner
+                exportBanner
                 if let player { PlayerBar(player: player) }
             }
         }
@@ -68,13 +66,22 @@ struct TranscriptPage: View {
         .navigationTitle(title)
         .navigationSubtitle(subtitle)
         .toolbar {
-            TranscriptToolbar(file: file, isLive: isLive, showsTranslation: showsTranslation)
+            TranscriptToolbar(
+                transcript: transcript, isLive: isLive, audio: controller.keptAudio(stored),
+                showsTranslation: showsTranslation)
         }
         .onChange(of: controller.transcript.utterances, initial: true) { showLive() }
         .onChange(of: controller.names) { showLive() }
-        .onChange(of: controller.rules) { showLive() }
-        .task(id: controller.fileEdits) { read() }
+        .onChange(of: controller.rules) {
+            showLive()
+            showStored()
+        }
+        .task(id: transcript) { await follow() }
+        .onChange(of: controller.state) { checkExport() }
         .focusedSceneValue(\.transcriptPlayer, player)
+        .focusedSceneValue(
+            \.exportableTranscript, isLive && controller.state != .idle ? nil : transcript
+        )
         .onDisappear { player?.pause() }
     }
 
@@ -92,26 +99,45 @@ struct TranscriptPage: View {
             in: controller.transcript, names: controller.names, rules: controller.rules)
     }
 
-    private func read() {
-        guard case .saved(let file) = item else { return }
-        guard let markdown = try? String(contentsOf: file, encoding: .utf8) else {
+    /// Follows the transcript in the store, so names, a summary, kept audio, and edits show as
+    /// soon as they are stored.
+    private func follow() async {
+        stored = nil
+        guard let transcript else { return }
+        checkExport()
+        do {
+            for try await view in controller.store.viewChanges(transcript) {
+                stored = view
+                showStored()
+                if !isLive, player == nil {
+                    player = controller.keptAudio(view).flatMap(TranscriptPlayer.init)
+                }
+            }
+        } catch {
             unreadable = true
-            return
         }
-        let document = TranscriptDocument(markdown: markdown)
-        self.document = document
-        lines = TranscriptLine.lines(in: document)
-        if player == nil { player = TranscriptAudio.kept(for: file).flatMap(TranscriptPlayer.init) }
+    }
+
+    private func showStored() {
+        guard !isLive, let stored else { return }
+        lines = TranscriptLine.lines(in: stored, rules: controller.rules)
         player?.starts = lines.map(\.start)
+    }
+
+    /// The Markdown file is checked when the transcript opens and once a session is over; it can
+    /// change outside Earshot at any time.
+    private func checkExport() {
+        guard let transcript, !listening else { return }
+        controller.checkExport(transcript)
     }
 
     /// The user's title, else the time: the date is in the subtitle.
     private var title: String {
         switch item {
         case .live: listening ? "Listening now" : "Last session"
-        case .saved(let file):
-            document.flatMap { SavedTranscripts.title(of: file, document: $0) }
-                ?? SavedTranscripts.date(of: file).formatted(date: .omitted, time: .shortened)
+        case .saved:
+            stored.map { $0.title ?? $0.startedAt.formatted(date: .omitted, time: .shortened) }
+                ?? ""
         }
     }
 
@@ -125,20 +151,32 @@ struct TranscriptPage: View {
         case .live:
             started = controller.startedAt.formatted(date: .abbreviated, time: .shortened)
             length = TranscriptLength.of(controller.transcript)
-        case .saved(let file):
-            let date = SavedTranscripts.date(of: file)
-            let named = document.flatMap { SavedTranscripts.title(of: file, document: $0) } != nil
-            started = date.formatted(date: .abbreviated, time: named ? .shortened : .omitted)
-            length = document.flatMap(TranscriptLength.of)
+        case .saved:
+            guard let stored else { return "" }
+            started = stored.startedAt.formatted(
+                date: .abbreviated, time: stored.title == nil ? .omitted : .shortened)
+            length = stored.length
         }
         return length.map { "\(started) · \(TranscriptLength.text($0))" } ?? started
     }
 
     @ViewBuilder private var failureBanner: some View {
-        if let file, let failure = controller.failedSummaries[file],
-            !controller.summarizing.contains(file)
+        if let transcript, let failure = controller.failedSummaries[transcript],
+            !controller.summarizing.contains(transcript)
         {
-            SummaryFailureBanner(file: file, failure: failure)
+            SummaryFailureBanner(transcript: transcript, failure: failure)
+        }
+    }
+
+    @ViewBuilder private var exportBanner: some View {
+        if let transcript, !listening {
+            switch controller.exports[transcript] {
+            case .edited(let file):
+                StaleExportBanner(transcript: transcript, file: file, missing: false)
+            case .missing(let file):
+                StaleExportBanner(transcript: transcript, file: file, missing: true)
+            default: EmptyView()
+            }
         }
     }
 
@@ -146,12 +184,12 @@ struct TranscriptPage: View {
         if unreadable {
             ContentUnavailableView(
                 "This transcript could not be read", systemImage: "exclamationmark.triangle",
-                description: Text("It may have been moved or deleted."))
+                description: Text("Quit Earshot and open it again."))
         } else if lines.isEmpty, listening {
             ContentUnavailableView(
                 "Listening…", systemImage: "waveform",
                 description: Text("Each line appears here once its speaker finishes it."))
-        } else if lines.isEmpty, document != nil || isLive {
+        } else if lines.isEmpty, stored != nil || isLive {
             ContentUnavailableView("Nothing transcribed", systemImage: "waveform")
         }
     }

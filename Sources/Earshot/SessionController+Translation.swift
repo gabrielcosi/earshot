@@ -17,7 +17,8 @@ extension SessionController {
                     case .translated(let translated):
                         transcript.setTranslation(
                             EarshotKit.Translation(sourceText: text, text: translated), for: id)
-                        save()
+                        keepTranslation(
+                            translated, of: text, language: target.minimalIdentifier, for: id)
                     case .needsDownload(let source):
                         report(
                             .translationNeedsDownload(
@@ -34,6 +35,22 @@ extension SessionController {
                 }
             }
         }
+    }
+
+    /// Stores a translation of what the paragraph says now. One that lands after the session
+    /// ended updates its Markdown file too.
+    private func keepTranslation(
+        _ translated: String, of text: String, language: String, for id: UUID
+    ) {
+        guard let savedID,
+            transcript.utterances.contains(where: { $0.id == id && $0.text == text })
+        else { return }
+        do {
+            try store.setTranslation(translated, of: text, language: language, for: id)
+        } catch {
+            reportSavingFailed(error)
+        }
+        if sealed { scheduleExport(savedID) }
     }
 
     /// Re-translates a channel's partial as it grows. One request per channel at a time; a partial

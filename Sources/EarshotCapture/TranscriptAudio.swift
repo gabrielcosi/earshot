@@ -2,21 +2,18 @@
 import EarshotKit
 import Foundation
 
-/// A session's audio kept next to its transcript: microphone on the left channel, the Mac's
-/// audio on the right, so playback has both sides and later processing can still separate them.
+/// A session's kept audio: microphone on the left channel, the Mac's audio on the right, so
+/// playback has both sides and later processing can still separate them.
 public enum TranscriptAudio {
     /// Speech-grade AAC. Measured: 51 kbit/s for both channels, about 23 MB an hour.
     private static let bitRate = 64_000
     private static let bytesPerSecond = 32_000
 
-    public static func file(for transcript: URL) -> URL {
-        transcript.deletingPathExtension().appendingPathExtension("m4a")
-    }
-
-    /// The transcript's kept audio, or nil when none was kept. Everything that plays kept audio
-    /// finds it here.
-    public static func kept(for transcript: URL) -> URL? {
-        let audio = file(for: transcript)
+    /// A transcript's kept audio in `folder`, or nil when none was kept or it is gone. Everything
+    /// that plays kept audio finds it here.
+    public static func kept(_ name: String?, in folder: URL) -> URL? {
+        guard let name else { return nil }
+        let audio = folder.appending(path: name)
         return FileManager.default.fileExists(atPath: audio.path(percentEncoded: false))
             ? audio : nil
     }

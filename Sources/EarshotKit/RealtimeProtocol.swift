@@ -68,7 +68,7 @@ enum ClientEvent: Sendable {
     }
 }
 
-public struct Word: Decodable, Sendable, Equatable {
+public struct Word: Codable, Sendable, Equatable {
     public let word: String
     public let start: Double
     public let end: Double

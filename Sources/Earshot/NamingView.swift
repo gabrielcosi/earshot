@@ -1,24 +1,28 @@
-import EarshotCapture
 import EarshotKit
 import SwiftUI
 
-/// Names the remote speakers of a saved transcript, from a few of their lines and, when enabled,
+/// Names the remote speakers of a stored transcript, from a few of their lines and, when enabled,
 /// suggestions from what the transcript itself says.
 struct NamingView: View {
-    let file: URL
+    let transcript: UUID
     @Environment(SessionController.self) private var controller
     @Environment(\.dismiss) private var dismiss
+    @State private var stored: StoredTranscript?
     @State private var speakers: [SpeakerNames.Speaker] = []
-    @State private var names: [String: String] = [:]
-    @State private var suggestions: [String: SpeakerSuggester.Suggestion] = [:]
+    @State private var names: [Speaker: String] = [:]
+    @State private var suggestions: [Speaker: SpeakerSuggester.Suggestion] = [:]
     @State private var suggesting = false
     @State private var player = ClipPlayer()
 
-    private var savedAudio: URL? { TranscriptAudio.kept(for: file) }
+    private var savedAudio: URL? { controller.keptAudio(stored) }
 
-    /// Saved audio, or the recording of the session that just ended.
+    /// Kept audio, or the recording of the session that just ended.
     private var hasAudio: Bool {
-        savedAudio != nil || (file == controller.savedFile && controller.lastRecording != nil)
+        savedAudio != nil || (transcript == controller.savedID && controller.lastRecording != nil)
+    }
+
+    private var title: String {
+        stored.map { $0.title ?? MarkdownExport.title(for: $0.startedAt) } ?? ""
     }
 
     var body: some View {
@@ -26,7 +30,7 @@ struct NamingView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Name the Speakers").font(.title2.bold())
-                    Text(file.deletingPathExtension().lastPathComponent).foregroundStyle(.secondary)
+                    Text(title).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if suggesting {
@@ -57,8 +61,9 @@ struct NamingView: View {
                             }
                         }
                         TextField(
-                            "Name", text: binding(for: speaker.label), prompt: Text(speaker.label))
-                        if let suggestion = suggestions[speaker.label] {
+                            "Name", text: binding(for: speaker.speaker), prompt: Text(speaker.label)
+                        )
+                        if let suggestion = suggestions[speaker.speaker] {
                             Text("Suggested from “\(suggestion.evidence)”")
                                 .font(.caption).foregroundStyle(.tint)
                         }
@@ -79,33 +84,33 @@ struct NamingView: View {
         .task { await load() }
         .onDisappear {
             player.stop()
-            if file == controller.savedFile {
+            if transcript == controller.savedID {
                 controller.discardLastRecording()
                 controller.sessionFinished()
             }
         }
     }
 
-    private func binding(for label: String) -> Binding<String> {
-        Binding(get: { names[label] ?? "" }, set: { names[label] = $0 })
+    private func binding(for speaker: Speaker) -> Binding<String> {
+        Binding(get: { names[speaker] ?? "" }, set: { names[speaker] = $0 })
     }
 
     private func load() async {
-        guard let markdown = try? String(contentsOf: file, encoding: .utf8) else { return }
-        speakers = SpeakerNames.speakers(in: markdown)
+        guard let stored = try? controller.store.view(transcript) else { return }
+        self.stored = stored
+        speakers = stored.speakersToName()
         guard controller.preferences.suggestSpeakerNames, !speakers.isEmpty else { return }
         suggesting = true
-        suggestions = await SpeakerSuggester.suggest(
-            for: markdown, labels: speakers.map(\.label)
-        ).mapValues { suggestion in
-            SpeakerSuggester.Suggestion(
+        let markdown = stored.markdown(rules: controller.rules)
+        let found = await SpeakerSuggester.suggest(for: markdown, labels: speakers.map(\.label))
+        suggesting = false
+        for speaker in speakers {
+            guard let suggestion = found[speaker.label] else { continue }
+            suggestions[speaker.speaker] = SpeakerSuggester.Suggestion(
                 name: suggestion.name,
                 evidence: SpeakerNames.evidence(for: suggestion.name, in: markdown)
                     ?? suggestion.evidence)
-        }
-        suggesting = false
-        for (label, suggestion) in suggestions where (names[label] ?? "").isEmpty {
-            names[label] = suggestion.name
+            if (names[speaker.speaker] ?? "").isEmpty { names[speaker.speaker] = suggestion.name }
         }
     }
 
@@ -122,7 +127,7 @@ struct NamingView: View {
     }
 
     private func save() {
-        controller.name(speakers: names, in: file)
+        controller.name(speakers: names, in: transcript)
         dismiss()
     }
 }

@@ -8,10 +8,13 @@ let package = Package(
     name: "Earshot",
     platforms: [.macOS("26.4")],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
+        .package(url: "https://github.com/groue/GRDB.swift", exact: "7.11.1"),
     ],
     targets: [
-        .target(name: "EarshotKit", swiftSettings: [.swiftLanguageMode(.v6)]),
+        .target(
+            name: "EarshotKit", dependencies: [.product(name: "GRDB", package: "GRDB.swift")],
+            swiftSettings: [.swiftLanguageMode(.v6)]),
         .target(
             name: "CEchoCanceller",
             cxxSettings: [
@@ -38,7 +41,7 @@ let package = Package(
         ),
         .testTarget(
             name: "EarshotKitTests",
-            dependencies: ["EarshotKit"],
+            dependencies: ["EarshotKit", .product(name: "GRDB", package: "GRDB.swift")],
             resources: [.copy("Fixtures")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),

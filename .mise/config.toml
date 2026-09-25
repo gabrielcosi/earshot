@@ -219,6 +219,7 @@ cp "$EARSHOT_ENGINE/ggml/LICENSE" "$licenses/ggml.txt"
 cp "$EARSHOT_ENGINE/third_party/cpp-httplib/LICENSE" "$licenses/cpp-httplib.txt"
 cp "$EARSHOT_DEPS/src/sentencepiece/LICENSE" "$licenses/SentencePiece.txt"
 cp .build/artifacts/sparkle/Sparkle/LICENSE "$licenses/Sparkle.txt"
+cp .build/checkouts/GRDB.swift/LICENSE "$licenses/GRDB.txt"
 cp "$EARSHOT_DEPS/src/webrtc-audio-processing/COPYING" "$licenses/webrtc-audio-processing.txt"
 cp "$EARSHOT_DEPS"/src/webrtc-audio-processing/subprojects/abseil-cpp-*/LICENSE "$licenses/Abseil.txt"
 

@@ -27,6 +27,7 @@ struct EarshotApp: App {
         .commands {
             TranscriptCommands(updater: delegate.updater)
             PlaybackCommands()
+            ExportCommands(controller: delegate.controller)
         }
 
         Settings {
@@ -59,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Recording.removeLeftovers()
+        controller.recoverUnfinished()
         controller.preferences.applyDockIcon()
         TranscriptCommands.zoomInWithEquals()
     }
@@ -73,11 +75,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// A session ends before the app does: the engine does not exit while the session's
-    /// connections are open, and the transcript is saved.
+    /// connections are open, and the transcript is saved. Markdown files being written are
+    /// finished too.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard controller.state != .idle else { return .terminateNow }
+        guard controller.state != .idle || controller.exporting else { return .terminateNow }
         Task {
-            await controller.finishForQuit()
+            if controller.state != .idle { await controller.finishForQuit() }
+            await controller.finishExports()
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
@@ -120,7 +124,7 @@ struct MenuBarLabel: View {
         .onChange(of: controller.namingRequest) {
             guard let request = controller.namingRequest else { return }
             controller.namingRequest = nil
-            navigation.naming = request.file
+            navigation.naming = request.transcript
             guard request.opensWindow else { return }
             openWindow(id: "main")
             NSApp.activate()

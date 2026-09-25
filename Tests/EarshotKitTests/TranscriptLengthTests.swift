@@ -18,13 +18,6 @@ import Testing
         #expect(TranscriptLength.of(transcript) == 1.4)
     }
 
-    @Test func aSavedTranscriptRunsToItsLastLinesStart() {
-        let document = TranscriptDocument(
-            markdown: "**Me** [00:00.20]: Hi.\n\n**Speaker 1** [32:14.00]: Bye.\n")
-        #expect(TranscriptLength.of(document) == 1934)
-        #expect(TranscriptLength.of(TranscriptDocument(markdown: "# Transcript\n")) == nil)
-    }
-
     /// Under a minute reads as a minute everywhere, so no transcript looks empty.
     @Test func lengthsReadInWholeMinutes() {
         #expect(TranscriptLength.text(0, locale: english) == "1 min")

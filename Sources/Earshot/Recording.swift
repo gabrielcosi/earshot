@@ -4,7 +4,7 @@ import os
 
 /// One capture's audio for the length of a session, exactly as sent to the engine, so its times
 /// match the transcript's. Kept in the container's caches and deleted after the session, unless
-/// "Keep audio" encodes it next to the transcript first.
+/// "Keep audio" encodes it into the store's audio folder first.
 nonisolated final class Recording: Sendable {
     let url: URL
     private let handle: OSAllocatedUnfairLock<FileHandle?>

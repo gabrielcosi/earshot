@@ -30,7 +30,8 @@ final class Preferences {
     var suggestSpeakerNames: Bool {
         didSet { UserDefaults.standard.set(suggestSpeakerNames, forKey: "suggestSpeakerNames") }
     }
-    /// Saves each session's audio next to its transcript, both sides, as AAC (~23 MB an hour).
+    /// Keeps each session's audio with its transcript in the store, both sides, as AAC (~23 MB
+    /// an hour).
     var keepAudio: Bool {
         didSet { UserDefaults.standard.set(keepAudio, forKey: "keepAudio") }
     }
@@ -115,8 +116,8 @@ final class Preferences {
     /// SMAppService is not observable; this makes a toggle re-read `openAtLogin`.
     private var loginChanges = 0
 
-    /// Where transcripts are saved. The sandbox allows the app's own container, or a folder the
-    /// user picked, remembered as a security-scoped bookmark.
+    /// Where the transcripts' Markdown copies are written. The sandbox allows the app's own
+    /// container, or a folder the user picked, remembered as a security-scoped bookmark.
     private(set) var transcriptsFolder: URL
     private static let defaultTranscriptsFolder = URL.documentsDirectory.appending(path: "Earshot")
 

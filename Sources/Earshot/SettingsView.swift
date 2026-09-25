@@ -38,7 +38,7 @@ struct GeneralSettings: View {
                 Toggle(isOn: $preferences.keepAudio) {
                     Text("Keep audio")
                     Text(
-                        "Saves the microphone and what the Mac plays next to each transcript (about 23 MB an hour), so every line can be played back."
+                        "Keeps a recording of your microphone and the Mac's sound with each transcript (about 23 MB an hour), so every line can be played back."
                     )
                 }
                 LabeledContent("Folder") {
@@ -62,7 +62,9 @@ struct GeneralSettings: View {
             } header: {
                 Text("Transcripts")
             } footer: {
-                Text("Each transcript is saved as Markdown after every finished line.")
+                Text(
+                    "Earshot saves each transcript after every finished line and writes a Markdown copy here when the session ends. It keeps the copy up to date until the copy is changed, moved, or deleted outside Earshot."
+                )
             }
 
             Section {

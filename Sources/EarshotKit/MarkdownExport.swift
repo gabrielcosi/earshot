@@ -1,21 +1,17 @@
 import Foundation
 
 public enum MarkdownExport {
-    public static func render(
-        _ transcript: Transcript, startedAt: Date, names: [Speaker: String] = [:],
-        rules: WordRules? = nil
-    ) -> String {
-        var lines = ["# \(title(for: startedAt))", ""]
-        for utterance in transcript.utterances {
-            let name = names[utterance.speaker] ?? utterance.speaker.label
-            let text = rules?.apply(utterance.text) ?? utterance.text
-            lines.append("**\(name)** [\(timestamp(utterance.start, hundredths: true))]: \(text)")
-            if let translation = utterance.currentTranslation {
-                lines.append("> \(translation)")
+    static func render(title: String, lines: [TranscriptDocument.Line]) -> String {
+        var output = ["# \(title)", ""]
+        for line in lines {
+            output.append(
+                "**\(line.label)** [\(timestamp(line.start, hundredths: true))]: \(line.text)")
+            if let translation = line.translation {
+                output.append("> \(translation)")
             }
-            lines.append("")
+            output.append("")
         }
-        return lines.joined(separator: "\n")
+        return output.joined(separator: "\n")
     }
 
     /// Whole seconds to read; the file keeps hundredths, because a line's time is also where its

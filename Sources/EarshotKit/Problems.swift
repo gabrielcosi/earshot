@@ -19,7 +19,11 @@ public enum Problem: Hashable, Sendable, Identifiable {
     /// An error the engine sent on a stream that stays open; the session continues.
     case engineError(Channel)
     case savingFailed(String)
+    /// The Markdown copy could not be written; the transcript itself is saved.
+    case exportFailed(String)
     case audioNotKept(String)
+    /// Export Audio… could not write the copy; the kept audio is as it was.
+    case audioNotExported(String)
     /// With its cause, when it is one the user can act on.
     case summaryFailed(SummaryFailure?)
     /// Language identifiers, such as "de" and "en".
@@ -39,7 +43,9 @@ public enum Problem: Hashable, Sendable, Identifiable {
         case .connectionLost(let channel): "connectionLost.\(channel.rawValue)"
         case .engineError(let channel): "engineError.\(channel.rawValue)"
         case .savingFailed: "savingFailed"
+        case .exportFailed: "exportFailed"
         case .audioNotKept: "audioNotKept"
+        case .audioNotExported: "audioNotExported"
         case .summaryFailed: "summaryFailed"
         case .translationNeedsDownload(let source, let target):
             "translationNeedsDownload.\(source).\(target)"
@@ -83,8 +89,12 @@ public enum Problem: Hashable, Sendable, Identifiable {
             "The speech engine hit a problem while transcribing \(Self.name(channel))."
         case .savingFailed(let detail):
             Self.sentences("Earshot could not save the transcript.", detail)
+        case .exportFailed(let detail):
+            Self.sentences("Earshot could not write the transcript's Markdown file.", detail)
         case .audioNotKept(let detail):
             Self.sentences("Earshot could not save the audio.", detail)
+        case .audioNotExported(let detail):
+            Self.sentences("Earshot could not export the audio.", detail)
         case .summaryFailed(let cause):
             Self.sentences("Earshot could not summarize the transcript.", cause?.message ?? "")
         case .translationNeedsDownload(let source, let target):

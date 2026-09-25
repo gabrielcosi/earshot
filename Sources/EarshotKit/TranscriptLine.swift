@@ -5,7 +5,7 @@ import Foundation
 public struct TranscriptLine: Identifiable, Sendable, Equatable {
     /// Who spoke, as far as colour goes: the microphone, speech no speaker was found for, or the
     /// other speakers numbered in order of first appearance. The diarizer numbers speakers that
-    /// way too, so a session keeps its colours when it is saved and its speakers are named.
+    /// way too, so a session keeps its colours when it is stored and its speakers are named.
     public enum Voice: Hashable, Sendable {
         case me
         case unknown
@@ -33,20 +33,17 @@ public struct TranscriptLine: Identifiable, Sendable, Equatable {
         }
     }
 
-    /// The lines of a saved transcript. The file keeps names, not slots: "Me" is the microphone,
-    /// since naming never renames it, and every other label is a speaker of its own.
-    public static func lines(in document: TranscriptDocument) -> [TranscriptLine] {
-        var voices = Voices<String>()
-        return document.lines.enumerated().map { index, line in
-            let voice: Voice =
-                switch line.label {
-                case Speaker.me.label: .me
-                case Speaker.unknown.label: .unknown
-                default: voices.voice(for: line.label)
-                }
-            return TranscriptLine(
-                id: "\(index)", speaker: line.label, voice: voice, start: line.start,
-                text: line.text, translation: line.translation)
+    /// The lines of a stored transcript, named, edited, and tidied as they will be exported.
+    public static func lines(in stored: StoredTranscript, rules: WordRules? = nil)
+        -> [TranscriptLine]
+    {
+        var voices = Voices()
+        return stored.paragraphs.map { paragraph in
+            TranscriptLine(
+                id: paragraph.id.uuidString, speaker: stored.label(paragraph.speaker),
+                voice: voices.voice(for: paragraph.speaker), start: paragraph.start,
+                text: rules?.apply(paragraph.text) ?? paragraph.text,
+                translation: paragraph.translation)
         }
     }
 
@@ -55,29 +52,31 @@ public struct TranscriptLine: Identifiable, Sendable, Equatable {
     public static func lines(
         in transcript: Transcript, names: [Speaker: String] = [:], rules: WordRules? = nil
     ) -> [TranscriptLine] {
-        var voices = Voices<Speaker>()
+        var voices = Voices()
         return transcript.utterances.map { utterance in
-            let voice: Voice =
-                switch utterance.speaker {
-                case .me: .me
-                case .unknown: .unknown
-                case .remote: voices.voice(for: utterance.speaker)
-                }
-            return TranscriptLine(
+            TranscriptLine(
                 id: utterance.id.uuidString,
-                speaker: names[utterance.speaker] ?? utterance.speaker.label, voice: voice,
+                speaker: names[utterance.speaker] ?? utterance.speaker.label,
+                voice: voices.voice(for: utterance.speaker),
                 start: utterance.start, text: rules?.apply(utterance.text) ?? utterance.text,
                 translation: utterance.translation?.text)
         }
     }
 
-    private struct Voices<Key: Hashable> {
-        private var order: [Key: Int] = [:]
+    /// The microphone and speech with no speaker have colours of their own; the other speakers
+    /// are numbered in order of first appearance.
+    private struct Voices {
+        private var order: [Speaker: Int] = [:]
 
-        mutating func voice(for key: Key) -> Voice {
-            if let index = order[key] { return .other(index) }
-            order[key] = order.count
-            return .other(order.count - 1)
+        mutating func voice(for speaker: Speaker) -> Voice {
+            switch speaker {
+            case .me: return .me
+            case .unknown: return .unknown
+            case .remote:
+                if let index = order[speaker] { return .other(index) }
+                order[speaker] = order.count
+                return .other(order.count - 1)
+            }
         }
     }
 }

@@ -4,22 +4,33 @@ import Testing
 @testable import EarshotKit
 
 @Suite struct SpeakerNamesTests {
-    private let markdown = """
-        # Transcript 24. Sep 2026 at 14:18
+    private let store: TranscriptStore
+    private let id = UUID()
 
-        **Speaker 1** [00:03]: Let's start with the thing you got wrong.
+    init() throws {
+        store = try TranscriptStore.inMemory()
+    }
 
-        **Me** [00:05]: Me?
+    /// A remote speaker's line, or the microphone's without one.
+    private func view(_ words: [Word]) throws -> StoredTranscript {
+        var transcript = Transcript()
+        for word in words {
+            transcript.applyFinal(
+                transcript: word.word, words: [word],
+                on: word.speaker == nil ? .microphone : .system)
+        }
+        try store.saveLive(id, startedAt: .now, utterances: transcript.utterances)
+        return try #require(try store.view(id))
+    }
 
-        **Speaker 2** [00:06]: Yes, exactly.
-        > Ja, genau.
-
-        **Speaker 1** [00:07]: I just want to be very clear.
-
-        """
-
-    @Test func listsRemoteSpeakersWithSampleLinesInOrderOfAppearance() {
-        let speakers = SpeakerNames.speakers(in: markdown)
+    @Test func listsRemoteSpeakersWithTheirLongestLinesInOrderOfAppearance() throws {
+        let speakers = try view([
+            Word(word: "Let's start with the thing you got wrong.", start: 3, end: 4, speaker: 1),
+            Word(word: "Me?", start: 5, end: 5.5),
+            Word(word: "Yes, exactly.", start: 6, end: 6.5, speaker: 2),
+            Word(word: "I just want to be very clear.", start: 7, end: 8, speaker: 1),
+        ]).speakersToName()
+        #expect(speakers.map(\.speaker) == [.remote(slot: 1), .remote(slot: 2)])
         #expect(speakers.map(\.label) == ["Speaker 1", "Speaker 2"])
         #expect(
             speakers.first?.samples.map(\.text) == [
@@ -28,41 +39,38 @@ import Testing
         #expect(speakers.first?.samples.map(\.start) == [3, 7])
     }
 
-    /// A line's time is where its clip starts: whole seconds put the previous speaker's last
-    /// words in front of it, and the clip must stop where the next line begins.
     /// Speech no speaker was found for cannot be named after one person.
-    @Test func anUnknownSpeakerIsNotOfferedForNaming() {
-        let markdown = """
-            **Unknown speaker** [00:01]: Welcome everyone.
-
-            **Speaker 1** [00:03]: Right, let's start.
-
-            """
-        #expect(SpeakerNames.speakers(in: markdown).map(\.label) == ["Speaker 1"])
-    }
-
-    @Test func samplesKeepTheLineTimeToTheHundredthAndEndAtTheNextLine() {
+    @Test func anUnknownSpeakerIsNotOfferedForNaming() throws {
         var transcript = Transcript()
         transcript.applyFinal(
-            transcript: "", words: [Word(word: "yes", start: 4.6, end: 4.9, speaker: 1)],
+            transcript: "", words: [Word(word: "Right", start: 3, end: 4, speaker: 1)],
             on: .system)
-        transcript.applyFinal(
-            transcript: "", words: [Word(word: "no", start: 5.28, end: 5.5, speaker: 2)],
-            on: .system)
-        let markdown = MarkdownExport.render(transcript, startedAt: Date())
-        let speakers = SpeakerNames.speakers(in: markdown)
-        #expect(speakers.map(\.label) == ["Speaker 1", "Speaker 2"])
+        transcript.relabel([
+            TranscribedTurn(
+                turn: SpeakerTurn(start: 3, end: 4, speaker: 1),
+                words: [Word(word: "Right", start: 3, end: 4)])
+        ])
+        let unknown = Utterance(speaker: .unknown, start: 1, end: 2, text: "Welcome everyone.")
+        try store.saveLive(id, startedAt: .now, utterances: [unknown] + transcript.utterances)
+        let speakers = try #require(try store.view(id)).speakersToName()
+        #expect(speakers.map(\.label) == ["Speaker 1"])
+    }
+
+    /// A line's time is where its clip starts, and the clip must stop where the next line begins.
+    @Test func samplesKeepTheLineTimeAndEndAtTheNextLine() throws {
+        let speakers = try view([
+            Word(word: "yes", start: 4.6, end: 4.9, speaker: 1),
+            Word(word: "no", start: 5.28, end: 5.5, speaker: 2),
+        ]).speakersToName()
         #expect(speakers.first?.samples.map(\.start) == [4.6])
         #expect(speakers.first?.samples.map(\.end) == [5.28])
         #expect(speakers.last?.samples.map(\.end) == [nil])
     }
 
-    @Test func renamesOnlyTheLabelAtTheStartOfEachLine() {
-        let renamed = SpeakerNames.rename(in: markdown, ["Speaker 1": "John Doe"])
-        #expect(renamed.contains("**John Doe** [00:03]: Let's start"))
-        #expect(renamed.contains("**John Doe** [00:07]"))
-        #expect(renamed.contains("**Speaker 2** [00:06]"))
-        #expect(renamed.contains("**Me** [00:05]"))
+    @Test func aNamedSpeakerIsOfferedUnderTheirName() throws {
+        _ = try view([Word(word: "Hello", start: 1, end: 2, speaker: 1)])
+        try store.rename(id, [.remote(slot: 1): "John Doe"])
+        #expect(try store.view(id)?.speakersToName().map(\.label) == ["John Doe"])
     }
 
     @Test func evidenceIsTheTranscriptLineThatSaysTheName() {
@@ -71,9 +79,5 @@ import Testing
             SpeakerNames.evidence(for: "John Doe", in: text)
                 == "Welcome back. I'm John Doe, and this is the show.")
         #expect(SpeakerNames.evidence(for: "Jane", in: text) == nil)
-    }
-
-    @Test func anEmptyNameLeavesTheLabel() {
-        #expect(SpeakerNames.rename(in: markdown, ["Speaker 1": "  "]) == markdown)
     }
 }
