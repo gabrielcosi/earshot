@@ -96,6 +96,7 @@ Support/               Info.plist, entitlements, app icon, menu bar glyphs
 config/server.yaml     engine configuration
 scripts/               fixtures.sh
 vendor/NeMo-Speech.cpp engine source (submodule)
+patches/nemo-speech/   Earshot's changes to the engine, applied by engine:build
 docs/adr/              product decisions
 docs/behaviour.md      engine, Core Audio, and framework behaviour established by experiment
 ```

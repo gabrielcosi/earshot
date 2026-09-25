@@ -34,7 +34,11 @@ The model has prompts for about 100 locales (the `asr.rnnt.prompt_dictionary` GG
 - **Offline diarization holds about 6.6 minutes.** Full attention is bounded by 5,000 encoder frames of 80 ms (`pos_emb_max_len`); a longer recording fails and returns no turns. `mode=streaming` covers long-form audio: a 7.6-minute recording of two `say` voices came back with both speakers across the whole length, in 12.7 s. The app uses offline mode up to the limit and streaming beyond it; either way each turn is then transcribed from its own audio.
 - **Similar synthetic voices can share a slot.** In a streamed English, German, and Spanish clip, the English and German `say` voices were assigned the same speaker. Offline passes over the same audio separated them. Real voices are not yet measured.
 
-## Engine: startup
+## Engine: process and startup
+
+- **The engine outlives the app that started it.** It is a plain child process, and macOS has no signal for a parent's death: after `kill -9` of its parent, the engine kept running with parent PID 1, still listening. With `--exit-with-parent` (Earshot's patch) it exits within about 0.5 s, measured, as its parent PID changes.
+- **`listener.ready` sits in a buffer when stdout is a pipe.** Without a flush, the event with the bound address only arrived when the engine exited; Earshot's patch flushes it.
+- **A model the configuration names but the app does not pass is downloaded.** With `diar.model_path` in the configuration and no `--diar-model`, the engine fetched the 113 MB diarizer from Hugging Face into its cache before listening. The configuration names no models.
 
 - **A cold start takes about 6 s** from `nemo-speech serve` to `/ready` returning 200 on a recent Apple silicon Mac, loading about 810 MB of GGUFs.
 

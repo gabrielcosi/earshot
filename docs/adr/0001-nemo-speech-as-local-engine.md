@@ -1,6 +1,6 @@
 # ADR-0001 — Run NeMo-Speech.cpp as a local engine behind its realtime WebSocket
 
-- **Status:** Accepted
+- **Status:** Accepted; the port and the reuse of a running engine superseded by [ADR-0009](0009-an-engine-only-this-launch-can-reach.md)
 - **Date:** 2026-09-24
 - **Deciders:** gabrielcosi
 - **Scope:** Where speech recognition and diarization run, and how the app talks to them
