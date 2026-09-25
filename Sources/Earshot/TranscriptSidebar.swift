@@ -6,6 +6,7 @@ struct TranscriptSidebar: View {
     let saved: SavedTranscripts
     @Environment(SessionController.self) private var controller
     @Environment(Navigation.self) private var navigation
+    @FocusedValue(\.transcriptPlayer) private var player
 
     var body: some View {
         @Bindable var navigation = navigation
@@ -20,6 +21,12 @@ struct TranscriptSidebar: View {
                     }
                 }
             }
+        }
+        // The focused list takes Space before the Controls menu sees it (seen on screen), so it
+        // plays and pauses here. Handled even with no player, so Space in the list never beeps.
+        .onKeyPress(.space) {
+            player?.toggle()
+            return .handled
         }
         .safeAreaBar(edge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
