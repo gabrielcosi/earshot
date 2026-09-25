@@ -151,6 +151,22 @@ run = "swift test --filter SystemCapture"
 description = "Fail on unused declarations (Periphery reads the native build system's index store)"
 run = "periphery scan --quiet --disable-update-check --strict --retain-codable-properties -- --build-system native"
 
+[tasks.screenshot]
+description = "Capture Earshot's frontmost window, never the whole screen, to a PNG"
+usage = 'arg "[file]" default="build/screenshot.png" help="Where to write the PNG"'
+run = """
+id=$(swift -e '
+import CoreGraphics
+let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+let earshot = windows.first { $0[kCGWindowOwnerName as String] as? String == "Earshot" && $0[kCGWindowLayer as String] as? Int == 0 }
+print(earshot?[kCGWindowNumber as String] as? Int ?? "")
+')
+[ -n "$id" ] || { echo "no Earshot window on screen: open it first" >&2; exit 1; }
+mkdir -p "$(dirname "$usage_file")"
+screencapture -x -o -l "$id" "$usage_file"
+echo "$usage_file"
+"""
+
 [tasks.fixtures]
 description = "Regenerate the live-test audio clips with macOS voices"
 run = "scripts/fixtures.sh"
