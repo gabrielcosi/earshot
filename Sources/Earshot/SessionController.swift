@@ -82,7 +82,7 @@ final class SessionController {
     @ObservationIgnored var attempted: [UUID: String] = [:]
     @ObservationIgnored private var awake: (any NSObjectProtocol)?
     @ObservationIgnored private var connecting: Task<Void, Never>?
-    @ObservationIgnored private var unload: Task<Void, Never>?
+    @ObservationIgnored var unload: Task<Void, Never>?
     /// The session is capturing but the engine is still loading; the transcript catches up.
     private(set) var engineLoading = false
     /// Stream time each channel's audio has been refined up to.
@@ -202,10 +202,10 @@ final class SessionController {
         async
     {
         do {
-            try await engine.ensureRunning(with: models)
+            let endpoint = try await engine.ensureRunning(with: models)
             guard isRecording else { return }
-            system.attach(connect(.system, diarize: true))
-            microphone?.attach(connect(.microphone, diarize: false))
+            system.attach(connect(.system, diarize: true, to: endpoint))
+            microphone?.attach(connect(.microphone, diarize: false, to: endpoint))
         } catch {
             log.error("engine start failed: \(error.localizedDescription)")
             lastError = error.localizedDescription
@@ -251,26 +251,6 @@ final class SessionController {
         if !preferences.keepEngineLoaded { engine.stop() }
     }
 
-    /// Loads the engine ahead of a session, when the menu opens or the app launches with "Keep
-    /// engine loaded" on.
-    func prewarm() {
-        unload?.cancel()
-        guard state == .idle, !engine.isRunning, let models = library.selection else { return }
-        Task { try? await engine.ensureRunning(with: models) }
-    }
-
-    /// Unloads a warmed-up engine that no session used. The minute covers closing and reopening
-    /// the menu while deciding; after it, ~1 GB of memory is worth more than a faster start.
-    func scheduleUnload() {
-        guard !preferences.keepEngineLoaded, state == .idle else { return }
-        unload?.cancel()
-        unload = Task {
-            try? await Task.sleep(for: .seconds(60))
-            guard !Task.isCancelled, state == .idle, !preferences.keepEngineLoaded else { return }
-            engine.stop()
-        }
-    }
-
     /// Applies names to a saved transcript. The session still open in the app keeps them as speaker
     /// names, so saving again writes them too; any other transcript is rewritten on disk.
     func name(speakers labels: [String: String], in file: URL) {
@@ -293,9 +273,11 @@ final class SessionController {
         names[speaker] ?? speaker.label
     }
 
-    private func connect(_ channel: Channel, diarize: Bool) -> RealtimeClient {
+    private func connect(_ channel: Channel, diarize: Bool, to endpoint: EngineEndpoint)
+        -> RealtimeClient
+    {
         let client = RealtimeClient(
-            engine: engine.endpoint,
+            engine: endpoint,
             settings: SessionSettings(
                 speakerDiarization: diarize,
                 language: LanguagePolicy.liveLanguage(allowed: spokenLanguages),
@@ -337,10 +319,10 @@ final class SessionController {
         else { return }
         let start = refinedUntil[channel] ?? 0
         refinedUntil[channel] = end
-        guard let pcm = client.audio(from: start, to: end) else { return }
-        let (endpoint, allowed, contexts) = (
-            engine.endpoint, spokenLanguages, rules.speechContexts
-        )
+        guard let pcm = client.audio(from: start, to: end), let endpoint = engine.endpoint else {
+            return
+        }
+        let (allowed, contexts) = (spokenLanguages, rules.speechContexts)
         refinements.append(
             Task {
                 do {

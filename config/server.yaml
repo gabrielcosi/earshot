@@ -10,11 +10,6 @@ asr:
   enabled: true
   backend:
     gpu: 0
-  model:
-    path: nvidia/nemotron-3.5-asr-streaming-0.6b
   endpointing:
     enable: true
     stop_history_eou_ms: 800
-
-diar:
-  model_path: nvidia/Nemotron-3-Diarization

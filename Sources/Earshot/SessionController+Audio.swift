@@ -12,13 +12,13 @@ extension SessionController {
         recording.finish()
         for refinement in refinements { await refinement.value }
         refinements = []
-        guard library.selection?.diarization != nil,
+        guard library.selection?.diarization != nil, let endpoint = engine.endpoint,
             let pcm = try? Data(contentsOf: recording.url, options: .alwaysMapped), !pcm.isEmpty
         else { return }
         do {
-            let turns = try await Diarizer.diarize(pcm: pcm, engine: engine.endpoint)
+            let turns = try await Diarizer.diarize(pcm: pcm, engine: endpoint)
             let transcribed = try await Retranscriber.transcribe(
-                turns: turns, pcm: pcm, engine: engine.endpoint, allowed: spokenLanguages,
+                turns: turns, pcm: pcm, engine: endpoint, allowed: spokenLanguages,
                 contexts: rules.speechContexts)
             transcript.relabel(transcribed)
             log.notice(
