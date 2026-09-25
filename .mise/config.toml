@@ -243,7 +243,10 @@ run = """
 [ -z "$(git status --porcelain --untracked-files=no --ignore-submodules=dirty)" ] ||
   { echo "commit first: a release must match a commit" >&2; exit 1; }
 notarize() { [ "${usage_rehearse:-false}" = true ] || mise run notarize "$1"; }
-dmg="$EARSHOT_RELEASES/Earshot-$usage_version.dmg"
+# One folder per version: the feed generator rewrites every entry whose archive it finds, so
+# an earlier version's DMG next to this one would get this version's download address.
+releases="$EARSHOT_RELEASES/$usage_version"
+dmg="$releases/Earshot-$usage_version.dmg"
 repo=https://github.com/gabrielcosi/earshot
 
 # Sparkle orders updates by CFBundleVersion, which grows with every commit on main.
@@ -254,7 +257,8 @@ notarize "$EARSHOT_APP"
 staging="$(mktemp -d)"
 ditto "$EARSHOT_APP" "$staging/Earshot.app"
 ln -s /Applications "$staging/Applications"
-mkdir -p "$EARSHOT_RELEASES"
+rm -rf "$releases"
+mkdir -p "$releases"
 rm -f "$dmg"
 hdiutil create -volname Earshot -srcfolder "$staging" -format UDZO -quiet "$dmg"
 codesign --force --sign "$usage_identity" "$dmg"
@@ -262,21 +266,22 @@ notarize "$dmg"
 
 # Start from the published feed so earlier releases stay in it on any machine, and never from a
 # local feed a rehearsal left behind.
-rm -f "$EARSHOT_RELEASES/appcast.xml"
-curl -fsSL -o "$EARSHOT_RELEASES/appcast.xml" "$repo/releases/latest/download/appcast.xml" ||
+curl -fsSL -o "$releases/appcast.xml" "$repo/releases/latest/download/appcast.xml" ||
   echo "no published appcast yet; starting a new one"
 [ ! -f "docs/releases/$usage_version.md" ] ||
-  cp "docs/releases/$usage_version.md" "$EARSHOT_RELEASES/Earshot-$usage_version.md"
-generate_appcast --account earshot --embed-release-notes \
+  cp "docs/releases/$usage_version.md" "$releases/Earshot-$usage_version.md"
+# No deltas: the release carries only the DMG and the feed.
+generate_appcast --account earshot --embed-release-notes --maximum-deltas 0 \
   --download-url-prefix "$repo/releases/download/v$usage_version/" \
-  --full-release-notes-url "$repo/releases/tag/v$usage_version" "$EARSHOT_RELEASES"
+  --full-release-notes-url "$repo/releases/tag/v$usage_version" "$releases"
 """
 
 [tasks.publish]
 description = "Tag a release built by `mise run release` and publish it on GitHub with the appcast"
 usage = 'arg "<version>"'
 run = """
-dmg="$EARSHOT_RELEASES/Earshot-$usage_version.dmg"
+releases="$EARSHOT_RELEASES/$usage_version"
+dmg="$releases/Earshot-$usage_version.dmg"
 tag="v$usage_version"
 xcrun stapler validate -q "$dmg" || { echo "$dmg is not notarized; other Macs would refuse it" >&2; exit 1; }
 # The tag goes to Forgejo; its push mirror carries it to GitHub.
@@ -290,7 +295,7 @@ notes=(--generate-notes)
 [ ! -f "docs/releases/$usage_version.md" ] || notes=(--notes-file "docs/releases/$usage_version.md")
 # Every release carries the appcast, so releases/latest/download/appcast.xml is always current.
 gh release create "$tag" --repo gabrielcosi/earshot --verify-tag --title "Earshot $usage_version" \
-  "${notes[@]}" "$dmg" "$EARSHOT_RELEASES/appcast.xml"
+  "${notes[@]}" "$dmg" "$releases/appcast.xml"
 """
 
 [tasks.run]
