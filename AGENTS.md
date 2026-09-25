@@ -43,7 +43,7 @@ Dead code is a gate on **pre-push**, because Periphery needs a full build. It ru
 
 - Conventional Commits, all lowercase: `type(scope): imperative description`.
 - Commit through mise, `mise x -- git commit`. The hooks call swift-format, SwiftLint, and oxfmt, which are only on mise's PATH.
-- Push every commit right after it is made: `mise x -- git push origin main`. The pre-push hook runs the tests and the dead-code scan.
+- Work on a branch and open a pull request on Forgejo with `tea pr create`, from the repository folder. Push the branch with `mise x -- git push -u origin <branch>`; the pre-push hook runs the tests and the dead-code scan. The maintainer merges.
 - Nothing is installed outside the repository. No Homebrew, no global caches: a new tool goes into `.mise/config.toml`, a new library builds into `.deps/`.
 - Build and release logic lives in mise tasks in `.mise/config.toml`, not in shell scripts. `scripts/` holds only `fixtures.sh`, which embeds Python.
 
