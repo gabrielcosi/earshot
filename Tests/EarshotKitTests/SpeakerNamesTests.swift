@@ -73,11 +73,48 @@ import Testing
         #expect(try store.view(id)?.speakersToName().map(\.label) == ["John Doe"])
     }
 
-    @Test func evidenceIsTheTranscriptLineThatSaysTheName() {
-        let text = "**Speaker 1** [00:28]: Welcome back. I'm John Doe, and this is the show.\n"
+    /// A short session is often one line holding everything that was said.
+    @Test func evidenceIsTheSentenceThatSaysTheName() {
+        let text = """
+            **Speaker 1** [00:28]: Thanks for tuning in. Today we look at a new kind of model. \
+            Welcome back, I'm John Doe, and this is the show. It runs on a laptop.
+            """
         #expect(
             SpeakerNames.evidence(for: "John Doe", in: text)
-                == "Welcome back. I'm John Doe, and this is the show.")
+                == "Welcome back, I'm John Doe, and this is the show.")
         #expect(SpeakerNames.evidence(for: "Jane", in: text) == nil)
+    }
+
+    /// Speech recognition leaves long stretches without a full stop.
+    @Test func evidenceInARunOnSentenceIsCutAroundTheName() throws {
+        let filler = Array(repeating: "and then it keeps going with no stop at all", count: 8)
+            .joined(separator: " ")
+        let text = "**Speaker 1** [00:00]: \(filler) so let me say I'm John Doe and \(filler)"
+        let evidence = try #require(SpeakerNames.evidence(for: "John Doe", in: text))
+        #expect(evidence.contains("I'm John Doe"))
+        #expect(evidence.count <= 160)
+        #expect(evidence.hasPrefix("…") && evidence.hasSuffix("…"))
+    }
+
+    /// The model sometimes answers with the label itself, which starts every line.
+    @Test func aLabelIsNotANameTheTranscriptSays() {
+        let text = "**Speaker 1** [00:00]: So yes, as speaker 1 said, we have to talk about this.\n"
+        #expect(SpeakerNames.evidence(for: "Speaker 1", in: text) == nil)
+    }
+
+    @Test func aNameIsSaidAsAWholeWord() {
+        let text = "**Speaker 1** [00:00]: Also, this is really cool.\n"
+        #expect(SpeakerNames.evidence(for: "Al", in: text) == nil)
+    }
+
+    /// Japanese, Chinese, and Thai put no spaces between words.
+    @Test(arguments: [
+        ("田中", "私は田中です。"),
+        ("王伟", "我叫王伟，你好"),
+        ("สมชาย", "ผมชื่อสมชายครับ"),
+    ])
+    func aNameIsFoundInScriptsWithoutSpaces(name: String, line: String) {
+        let text = "**Speaker 1** [00:00]: \(line)\n"
+        #expect(SpeakerNames.evidence(for: name, in: text) == line)
     }
 }

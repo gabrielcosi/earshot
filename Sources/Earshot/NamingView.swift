@@ -12,6 +12,7 @@ struct NamingView: View {
     @State private var names: [Speaker: String] = [:]
     @State private var suggestions: [Speaker: SpeakerSuggester.Suggestion] = [:]
     @State private var suggesting = false
+    @State private var suggested = false
     @State private var player = ClipPlayer()
 
     private var savedAudio: URL? { controller.keptAudio(stored) }
@@ -65,7 +66,10 @@ struct NamingView: View {
                         )
                         if let suggestion = suggestions[speaker.speaker] {
                             Text("Suggested from “\(suggestion.evidence)”")
-                                .font(.caption).foregroundStyle(.tint)
+                                .font(.caption).foregroundStyle(.tint).lineLimit(2)
+                        } else if suggested {
+                            Text("No name found in the transcript.")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -104,12 +108,11 @@ struct NamingView: View {
         let markdown = stored.markdown(rules: controller.rules)
         let found = await SpeakerSuggester.suggest(for: markdown, labels: speakers.map(\.label))
         suggesting = false
+        guard let found else { return }
+        suggested = true
         for speaker in speakers {
             guard let suggestion = found[speaker.label] else { continue }
-            suggestions[speaker.speaker] = SpeakerSuggester.Suggestion(
-                name: suggestion.name,
-                evidence: SpeakerNames.evidence(for: suggestion.name, in: markdown)
-                    ?? suggestion.evidence)
+            suggestions[speaker.speaker] = suggestion
             if (names[speaker.speaker] ?? "").isEmpty { names[speaker.speaker] = suggestion.name }
         }
     }

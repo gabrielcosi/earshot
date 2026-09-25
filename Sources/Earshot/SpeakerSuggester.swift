@@ -1,3 +1,4 @@
+import EarshotKit
 import Foundation
 import FoundationModels
 
@@ -15,6 +16,9 @@ enum SpeakerSuggester {
         var label: String
         @Guide(description: "The person's name as said in the transcript")
         var name: String
+        // Never shown: the quote shown is the transcript's own sentence. Asking for it keeps the
+        // model grounded: without it, it named a speaker in a transcript where nobody gave a
+        // name in 5 of 5 runs, against 1 of 5 with it.
         @Guide(description: "The words from the transcript that show this label is this person")
         var evidence: String
     }
@@ -35,8 +39,9 @@ enum SpeakerSuggester {
         Never guess. Omit labels you cannot name.
         """
 
-    static func suggest(for markdown: String, labels: [String]) async -> [String: Suggestion] {
-        guard isAvailable else { return [:] }
+    /// Nil when the model is unavailable or fails, so the sheet does not claim it found no one.
+    static func suggest(for markdown: String, labels: [String]) async -> [String: Suggestion]? {
+        guard isAvailable else { return nil }
         let session = LanguageModelSession(instructions: instructions)
         // Introductions come early, so the opening of the transcript, as much as fits, is what
         // the model reads. Measured: 3.2 s for a two-minute podcast.
@@ -44,13 +49,13 @@ enum SpeakerSuggester {
         guard
             let answer = try? await session.respond(
                 to: "Transcript:\n\(markdown.prefix(excerpt))", generating: Answer.self)
-        else { return [:] }
-        let text = markdown.lowercased()
+        else { return nil }
         return answer.content.speakers.reduce(into: [:]) { result, found in
             let name = found.name.trimmingCharacters(in: .whitespaces)
-            guard labels.contains(found.label), !name.isEmpty, text.contains(name.lowercased())
+            guard labels.contains(found.label),
+                let evidence = SpeakerNames.evidence(for: name, in: markdown)
             else { return }
-            result[found.label] = Suggestion(name: name, evidence: found.evidence)
+            result[found.label] = Suggestion(name: name, evidence: evidence)
         }
     }
 }
