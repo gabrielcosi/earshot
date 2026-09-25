@@ -1,4 +1,5 @@
 import SwiftUI
+@preconcurrency import Translation
 
 /// What the main window shows; the menu bar sets it when it opens the window.
 @Observable
@@ -19,6 +20,7 @@ final class Navigation {
 
 struct MainWindow: View {
     @Environment(Navigation.self) private var navigation
+    @Environment(SessionController.self) private var controller
 
     var body: some View {
         @Bindable var navigation = navigation
@@ -39,6 +41,16 @@ struct MainWindow: View {
             }
         }
         .frame(minWidth: 760, minHeight: 480)
+        // Here rather than on a view inside, so the prompt shows whichever section is open.
+        .translationTask(controller.downloadRequest) { session in
+            let (source, target) = (session.sourceLanguage, session.targetLanguage)
+            do {
+                try await session.prepareTranslation()
+                controller.downloadFinished(from: source, to: target)
+            } catch {
+                controller.downloadFailed(from: source, to: target, error)
+            }
+        }
     }
 }
 

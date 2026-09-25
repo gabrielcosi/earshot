@@ -1,6 +1,5 @@
 import EarshotKit
 import SwiftUI
-@preconcurrency import Translation
 
 struct TranscriptView: View {
     @Environment(SessionController.self) private var controller
@@ -30,10 +29,6 @@ struct TranscriptView: View {
                     description: Text("Start listening from the menu bar.")
                 )
             }
-        }
-        .translationTask(controller.downloadRequest) { session in
-            try? await session.prepareTranslation()
-            controller.downloadFinished()
         }
     }
 

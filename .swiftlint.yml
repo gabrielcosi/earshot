@@ -70,3 +70,8 @@ type_body_length:
 function_body_length:
   warning: 60
   error: 120
+
+# An exhaustive switch over an enum's cases is one decision, not one per case; splitting it to
+# pass would leave an unreachable branch.
+cyclomatic_complexity:
+  ignores_case_statements: true

@@ -78,7 +78,7 @@ public final class RealtimeClient: Sendable {
                 log.error(
                     "receive failed, close code \(self.task.closeCode.rawValue) \(reason, privacy: .public): \(error, privacy: .public)"
                 )
-                continuation.yield(.error(error.localizedDescription))
+                continuation.yield(.disconnected(error.localizedDescription))
                 continuation.finish()
             }
         }

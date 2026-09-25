@@ -20,6 +20,9 @@ final class SessionController {
     /// The session that just ended, kept until its speakers are named so their lines can be
     /// played; deleted then, at the next start, or when the app quits.
     var lastRecording: Recording?
+    var namingRequest: NamingRequest?
+    /// A session ended on its own and the menu has not been opened since.
+    var needsAttention = false
     /// Set after naming or summarizing, so views showing that file read it again.
     var changedFile: URL?
     /// The current session's summary, kept so every save writes it above the transcript.
@@ -27,7 +30,8 @@ final class SessionController {
     /// Transcripts being summarized right now.
     var summarizing: Set<URL> = []
     var names: [Speaker: String] = [:]
-    var lastError: String?
+    /// What keeps Earshot from working right now, shown in the menu.
+    var problems = Problems()
     var rules: WordRules {
         didSet {
             UserDefaults.standard.set(try? JSONEncoder().encode(rules), forKey: "wordRules")
@@ -44,16 +48,20 @@ final class SessionController {
             UserDefaults.standard.set(primaryLanguage, forKey: "primaryLanguage")
             translator.reset()
             attempted = [:]
+            problems.resolve(where: \.isTranslation)
             translatePending()
         }
     }
     var translationEnabled: Bool {
         didSet {
             UserDefaults.standard.set(translationEnabled, forKey: "translationEnabled")
+            problems.resolve(where: \.isTranslation)
+            attempted = [:]
             translatePending()
         }
     }
-    /// Set when a language pair needs Apple's download prompt; the transcript window presents it.
+    /// Set when the user asks for a language pair's download; the main window presents Apple's
+    /// prompt for it.
     var downloadRequest: TranslationSession.Configuration?
     private(set) var translationLanguages: [Locale.Language] = []
 
@@ -110,12 +118,7 @@ final class SessionController {
             defaults.string(forKey: "primaryLanguage") ?? Locale.current.language.minimalIdentifier
         translationEnabled = defaults.object(forKey: "translationEnabled") as? Bool ?? true
         Task { translationLanguages = await translator.supportedLanguages() }
-    }
-
-    func downloadFinished() {
-        downloadRequest = nil
-        attempted = [:]
-        translatePending()
+        engine.onExit = { [weak self] in self?.engineExited() }
     }
 
     /// Starts capturing at once. The engine may still be loading: audio waits in the sinks and
@@ -124,7 +127,7 @@ final class SessionController {
     func start() async {
         guard state == .idle else { return }
         state = .starting
-        lastError = nil
+        problems.startSession()
         unload?.cancel()
         discardLastRecording()
         do {
@@ -157,7 +160,7 @@ final class SessionController {
             }
         } catch {
             log.error("start failed: \(error.localizedDescription)")
-            lastError = error.localizedDescription
+            if let problem = Self.problem(startingWith: error) { problems.report(problem) }
             teardown()
             state = .idle
         }
@@ -208,16 +211,19 @@ final class SessionController {
             microphone?.attach(connect(.microphone, diarize: false, to: endpoint))
         } catch {
             log.error("engine start failed: \(error.localizedDescription)")
-            lastError = error.localizedDescription
+            problems.report(Self.problem(startingEngine: error))
             teardown()
             state = .idle
         }
         engineLoading = false
     }
 
-    func stop() async {
+    /// `byUser` is false for a session that ends on its own; it then opens nothing and takes no
+    /// focus, and the menu bar ear shows a mark instead.
+    func stop(byUser: Bool = true) async {
         guard isRecording else { return }
         state = .stopping
+        if !byUser { needsAttention = true }
         microphone?.stop()
         system?.stop()
         echoReference?.stop()
@@ -249,6 +255,7 @@ final class SessionController {
         save()
         state = .idle
         if !preferences.keepEngineLoaded { engine.stop() }
+        sessionEnded(byUser: byUser)
     }
 
     /// Applies names to a saved transcript. The session still open in the app keeps them as speaker
@@ -303,7 +310,13 @@ final class SessionController {
             refine(final, on: channel)
         case .error(let message):
             log.error("\(channel.rawValue, privacy: .public) stream: \(message, privacy: .public)")
-            if isRecording { lastError = "\(channel.rawValue): \(message)" }
+            if isRecording { problems.report(.engineError(channel)) }
+        case .disconnected(let message):
+            log.error("\(channel.rawValue, privacy: .public) lost: \(message, privacy: .public)")
+            guard isRecording else { return }
+            problems.report(engine.isRunning ? .connectionLost(channel) : .engineStopped)
+            // stop() waits for this listener to finish, so it cannot run inside it.
+            Task { await stop(byUser: false) }
         case .committed:
             clients[channel]?.close()
         case .sessionCreated, .other:
@@ -376,7 +389,8 @@ final class SessionController {
             try markdown.write(to: file, atomically: true, encoding: .utf8)
             savedFile = file
         } catch {
-            lastError = "Saving failed: \(error.localizedDescription)"
+            log.error("saving failed: \(error, privacy: .public)")
+            problems.report(.savingFailed(Self.actionable(error)))
         }
     }
 }

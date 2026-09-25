@@ -14,6 +14,10 @@ final class EngineServer {
     /// the engine on this Mac's GPU or crowd out a recording's sessions.
     private(set) var endpoint: EngineEndpoint?
     private var process: Process?
+    /// Which launch `process` is; an exit reported for any other was already stopped or replaced.
+    private var launch: UUID?
+    /// Called when the running engine exits without being stopped.
+    var onExit: (() -> Void)?
     private var running: Models?
     /// A start in progress. Warming up from the menu and pressing Start can overlap; the second
     /// caller waits for the first instead of launching a second engine.
@@ -25,6 +29,8 @@ final class EngineServer {
     /// A cold start loads ~810 MB of GGUFs and takes about 6 s on a recent Apple silicon Mac;
     /// 5x covers a cold page cache.
     private static let startupTimeout = Duration.seconds(30)
+
+    static let logURL = URL.libraryDirectory.appending(path: "Logs/Earshot-engine.log")
 
     /// Returns the engine running `models`, starting it, or restarting it when it runs others.
     func ensureRunning(with models: Models) async throws -> EngineEndpoint {
@@ -48,8 +54,7 @@ final class EngineServer {
 
         let key = (0..<32).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max)) }
             .joined()
-        let logURL = URL.libraryDirectory.appending(path: "Logs/Earshot-engine.log")
-        FileManager.default.createFile(atPath: logURL.path(percentEncoded: false), contents: nil)
+        let launch = UUID()
         let launched = try await EngineLaunch.start(
             binary: binary,
             arguments: EngineLaunch.arguments(
@@ -58,19 +63,36 @@ final class EngineServer {
             // The environment, not an argument: arguments show up in every process listing.
             environment: ProcessInfo.processInfo.environment.merging(
                 ["NEMO_SPEECH_HTTP_API_KEY": key]) { _, key in key },
-            log: try FileHandle(forWritingTo: logURL), timeout: Self.startupTimeout)
+            log: try EngineLog.open(Self.logURL), timeout: Self.startupTimeout
+        ) { [weak self] in
+            Task { @MainActor in self?.exited(launch) }
+        }
         log.info(
             "launched engine pid \(launched.process.processIdentifier) at \(launched.address, privacy: .public)"
         )
         let endpoint = EngineEndpoint(url: launched.address, apiKey: key)
-        (process, running, self.endpoint) = (launched.process, models, endpoint)
+        (process, running, self.endpoint, self.launch) = (
+            launched.process, models, endpoint, launch
+        )
+        // An exit reported before the line above was ignored as another launch's.
+        guard launched.process.isRunning else {
+            stop()
+            throw EngineLaunch.Failure.exited
+        }
         return endpoint
     }
 
     func stop() {
         process?.terminate()
         process?.waitUntilExit()
-        (process, running, endpoint) = (nil, nil, nil)
+        (process, running, endpoint, launch) = (nil, nil, nil, nil)
+    }
+
+    private func exited(_ launch: UUID) {
+        guard launch == self.launch else { return }
+        log.error("engine pid \(self.process?.processIdentifier ?? 0) exited")
+        (process, running, endpoint, self.launch) = (nil, nil, nil, nil)
+        onExit?()
     }
 }
 

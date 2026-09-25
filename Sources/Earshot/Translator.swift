@@ -10,7 +10,7 @@ final class Translator {
         case notNeeded
         /// The language pair exists but its models are not downloaded yet.
         case needsDownload(source: Locale.Language)
-        case unsupported
+        case unsupported(source: Locale.Language)
     }
 
     /// Measured on Apple silicon: low latency takes 20-35 ms a sentence, fast enough to redo on every
@@ -45,8 +45,8 @@ final class Translator {
         switch await lowLatency.status(from: source, to: target) {
         case .installed: break
         case .supported: return .needsDownload(source: source)
-        case .unsupported: return .unsupported
-        @unknown default: return .unsupported
+        case .unsupported: return .unsupported(source: source)
+        @unknown default: return .unsupported(source: source)
         }
 
         let key = "\(source.minimalIdentifier)>\(target.minimalIdentifier)>\(strategy)"

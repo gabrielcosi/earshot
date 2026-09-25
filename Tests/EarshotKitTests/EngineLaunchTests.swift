@@ -28,6 +28,44 @@ import Testing
         #expect(arguments.firstIndex(of: "--port").map { arguments[$0 + 1] } == "0")
         #expect(arguments.firstIndex(of: "--diar-model").map { arguments[$0 + 1] } == "/diar.gguf")
     }
+
+    private static let ready = #"echo '{"event":"listener.ready","url":"http://127.0.0.1:1/"}'"#
+
+    /// A stand-in engine: a shell running `script`.
+    private func launch(_ script: String, onExit: @escaping @Sendable () -> Void = {})
+        async throws -> EngineLaunch.Running
+    {
+        try await EngineLaunch.start(
+            binary: URL(filePath: "/bin/sh"), arguments: ["-c", script], environment: [:],
+            log: FileHandle.nullDevice, timeout: .seconds(10), onExit: onExit)
+    }
+
+    /// An engine that dies mid-session has to be noticed, or the session looks alive with
+    /// nothing behind it.
+    @Test(.timeLimit(.minutes(1))) func anEngineThatStopsAfterStartingIsReported() async throws {
+        let (exits, exited) = AsyncStream<Void>.makeStream()
+        let running = try await launch("\(Self.ready); exec sleep 60") { exited.yield() }
+        #expect(running.address.port == 1)
+        running.process.terminate()
+        for await _ in exits { break }
+        #expect(!running.process.isRunning)
+    }
+
+    @Test func anEngineThatStopsBeforeItIsReadyFailsTheStart() async {
+        await #expect(throws: EngineLaunch.Failure.self) { try await launch("exit 3") }
+    }
+
+    /// The exit handler reports an exit only when this says the engine got ready first, so an
+    /// engine that never started is not also reported as stopped.
+    @Test func theFirstOutcomeStands() throws {
+        let address = try #require(URL(string: "http://127.0.0.1:1/"))
+        let exited = ReadySignal()
+        exited.resolve(nil)
+        #expect(exited.resolve(address) == .exited)
+        let ready = ReadySignal()
+        ready.resolve(address)
+        #expect(ready.resolve(nil) == .ready(address))
+    }
 }
 
 /// Two apps (two users, or two copies) each start their own engine: each gets its own port, and

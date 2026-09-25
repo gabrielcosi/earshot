@@ -10,8 +10,9 @@ public enum EngineLaunch {
 
         public var errorDescription: String? {
             switch self {
-            case .exited: "The speech engine stopped while it was starting."
-            case .notReady(let timeout): "The speech engine did not start within \(timeout)."
+            case .exited: "It stopped while loading."
+            case .notReady(let timeout):
+                "It did not finish loading within \(timeout.components.seconds) seconds."
             }
         }
     }
@@ -43,10 +44,11 @@ public enum EngineLaunch {
     }
 
     /// Returns once the engine listens. Everything it prints goes to `log`; its output is read
-    /// for as long as it runs, so it never blocks on a full pipe.
+    /// for as long as it runs, so it never blocks on a full pipe. `onExit` runs when an engine
+    /// that got ready exits, for whatever reason, on a thread of the system's choosing.
     public static func start(
         binary: URL, arguments: [String], environment: [String: String], log: FileHandle,
-        timeout: Duration
+        timeout: Duration, onExit: @escaping @Sendable () -> Void = {}
     ) async throws -> Running {
         let process = Process()
         process.executableURL = binary
@@ -76,6 +78,10 @@ public enum EngineLaunch {
                 ready.resolve(address)
             }
         }
+        // Set before `run()`, so an engine that exits at once is not missed.
+        process.terminationHandler = { _ in
+            if case .ready = ready.resolve(nil) { onExit() }
+        }
         try process.run()
         let timer = Task {
             try await Task.sleep(for: timeout)
@@ -95,8 +101,8 @@ public enum EngineLaunch {
 }
 
 /// The first of: the engine's address, its output closing, or the timeout.
-private final class ReadySignal: Sendable {
-    enum Outcome: Sendable {
+final class ReadySignal: Sendable {
+    enum Outcome: Sendable, Equatable {
         case ready(URL)
         case exited
         case timedOut
@@ -105,15 +111,18 @@ private final class ReadySignal: Sendable {
     private let state = OSAllocatedUnfairLock<(Outcome?, CheckedContinuation<Outcome, Never>?)>(
         initialState: (nil, nil))
 
-    func resolve(_ address: URL?, timedOut: Bool = false) {
+    /// Returns the outcome that stands: this one, or an earlier one.
+    @discardableResult func resolve(_ address: URL?, timedOut: Bool = false) -> Outcome {
         let outcome: Outcome = address.map { .ready($0) } ?? (timedOut ? .timedOut : .exited)
-        let waiting = state.withLock { state -> CheckedContinuation<Outcome, Never>? in
-            guard state.0 == nil else { return nil }
+        let (settled, waiting) = state.withLock {
+            state -> (Outcome, CheckedContinuation<Outcome, Never>?) in
+            if let earlier = state.0 { return (earlier, nil) }
             state.0 = outcome
             defer { state.1 = nil }
-            return state.1
+            return (outcome, state.1)
         }
         waiting?.resume(returning: outcome)
+        return settled
     }
 
     func value() async -> Outcome {

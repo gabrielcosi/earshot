@@ -248,7 +248,7 @@ struct LiveEngineTests {
                 finals.append(Final(transcript: transcript, words: words))
             case .committed:
                 system.close()
-            case .error(let message):
+            case .error(let message), .disconnected(let message):
                 Issue.record("engine error: \(message)")
                 system.close()
             default:
@@ -282,7 +282,7 @@ struct LiveEngineTests {
         for await event in client.events {
             switch event {
             case .committed: client.close()
-            case .error(let message):
+            case .error(let message), .disconnected(let message):
                 Issue.record("microphone session error: \(message)")
                 client.close()
             default: break

@@ -46,7 +46,7 @@ extension SessionController {
             }.value
         } catch {
             log.error("keeping the audio failed: \(error, privacy: .public)")
-            lastError = "Could not save the audio: \(error.localizedDescription)"
+            problems.report(.audioNotKept(Self.actionable(error)))
         }
     }
 

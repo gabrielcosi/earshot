@@ -1,5 +1,6 @@
 import EarshotKit
 import Foundation
+@preconcurrency import Translation
 
 /// Translation of the live transcript: partials as they grow, paragraphs when they finish.
 extension SessionController {
@@ -18,10 +19,14 @@ extension SessionController {
                             EarshotKit.Translation(sourceText: text, text: translated), for: id)
                         save()
                     case .needsDownload(let source):
-                        if downloadRequest == nil {
-                            downloadRequest = .init(source: source, target: target)
-                        }
-                    case .notNeeded, .unsupported:
+                        report(
+                            .translationNeedsDownload(
+                                from: source.minimalIdentifier, to: target.minimalIdentifier))
+                    case .unsupported(let source):
+                        report(
+                            .translationUnsupported(
+                                from: source.minimalIdentifier, to: target.minimalIdentifier))
+                    case .notNeeded:
                         break
                     }
                 } catch {
@@ -52,6 +57,54 @@ extension SessionController {
             liveInFlight.remove(channel)
             if liveStale.remove(channel) != nil { translateLive(channel) }
         }
+    }
+
+    /// Asks for Apple's download prompt for a language pair; the main window presents it.
+    func requestDownload(from source: String, to target: String) {
+        downloadRequest = .init(
+            source: Locale.Language(identifier: source), target: Locale.Language(identifier: target)
+        )
+    }
+
+    /// A translation that returns after translation was turned off or the language changed
+    /// reports nothing: its problem was resolved when that happened.
+    private func report(_ problem: Problem) {
+        let current = Locale.Language(identifier: primaryLanguage).minimalIdentifier
+        switch problem {
+        case .translationNeedsDownload(_, let target), .translationUnsupported(_, let target):
+            guard translationEnabled, target == current else { return }
+        default:
+            break
+        }
+        problems.report(problem)
+    }
+
+    /// The pair is installed: its problem goes, and what waited for it is translated.
+    func downloadFinished(from source: Locale.Language?, to target: Locale.Language?) {
+        if let source, let target {
+            let installed = Problem.translationNeedsDownload(
+                from: source.minimalIdentifier, to: target.minimalIdentifier)
+            problems.resolve { $0 == installed }
+        }
+        endDownload(from: source, to: target)
+        attempted = [:]
+        translatePending()
+    }
+
+    /// Declined or failed: the problem stays, so the download can be asked for again.
+    func downloadFailed(
+        from source: Locale.Language?, to target: Locale.Language?, _ error: any Error
+    ) {
+        log.error("translation download failed: \(error.localizedDescription)")
+        endDownload(from: source, to: target)
+    }
+
+    /// Clears the request only if it is still this one; the user may have asked for another pair.
+    private func endDownload(from source: Locale.Language?, to target: Locale.Language?) {
+        guard downloadRequest?.source?.minimalIdentifier == source?.minimalIdentifier,
+            downloadRequest?.target?.minimalIdentifier == target?.minimalIdentifier
+        else { return }
+        downloadRequest = nil
     }
 
 }

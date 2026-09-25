@@ -88,7 +88,10 @@ public enum ServerEvent: Sendable, Equatable {
     case partial(delta: String)
     case final(transcript: String, words: [Word])
     case committed
+    /// An error the engine reported; the stream stays open.
     case error(String)
+    /// The socket failed or closed; the stream ends after this.
+    case disconnected(String)
     case other(String)
 
     public static func decode(_ text: String) throws -> ServerEvent {

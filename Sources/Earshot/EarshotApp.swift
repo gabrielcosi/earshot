@@ -52,31 +52,65 @@ struct MenuBarLabel: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Image(nsImage: Self.glyph(recording: controller.isRecording))
-            .task {
-                if controller.preferences.keepEngineLoaded { controller.prewarm() }
-                guard controller.library.selection == nil else { return }
-                navigation.section = .settings
-                navigation.browsingModels = true
-                openWindow(id: "main")
-                NSApp.activate()
-            }
+        Image(
+            nsImage: Self.glyph(
+                recording: controller.isRecording, attention: controller.needsAttention)
+        )
+        .task {
+            if controller.preferences.keepEngineLoaded { controller.prewarm() }
+            guard controller.library.selection == nil else { return }
+            navigation.section = .settings
+            navigation.browsingModels = true
+            openWindow(id: "main")
+            NSApp.activate()
+        }
+        // The label lives as long as the app, so a session that ends while the menu is closed
+        // still gets its naming sheet, the next time the window opens.
+        .onChange(of: controller.namingRequest) {
+            guard let request = controller.namingRequest else { return }
+            controller.namingRequest = nil
+            navigation.naming = request.file
+            navigation.section = .transcripts
+            guard request.opensWindow else { return }
+            openWindow(id: "main")
+            NSApp.activate()
+        }
     }
 }
 
 extension MenuBarLabel {
-    /// The app icon's ear and level bars as a template image; recording swaps the bars for a dot.
-    /// Outside a bundle (`swift run`) there is no glyph, so a symbol stands in.
-    static func glyph(recording: Bool) -> NSImage {
+    /// The app icon's ear and level bars as a template image; recording swaps the bars for a dot,
+    /// and a session that ended on its own adds a warning mark. Outside a bundle (`swift run`)
+    /// there is no glyph, so a symbol stands in.
+    static func glyph(recording: Bool, attention: Bool) -> NSImage {
         let name = recording ? "MenuBarRecording" : "MenuBarIcon"
-        guard let image = Bundle.main.image(forResource: name) else {
-            let symbol = recording ? "record.circle" : "waveform"
-            return NSImage(systemSymbolName: symbol, accessibilityDescription: "Earshot")
-                ?? NSImage()
+        let symbol = recording ? "record.circle" : "waveform"
+        guard
+            let image = Bundle.main.image(forResource: name)
+                ?? NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        else { return NSImage() }
+        let glyph = attention ? marked(image) : image
+        glyph.isTemplate = true
+        glyph.accessibilityDescription =
+            attention ? "Earshot, needs attention" : recording ? "Earshot, recording" : "Earshot"
+        return glyph
+    }
+
+    /// The glyph with a warning mark in its lower right corner, cut out of the glyph so the two
+    /// stay apart in a template image, which keeps only alpha.
+    private static func marked(_ glyph: NSImage) -> NSImage {
+        let mark = NSImage(
+            systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil)
+        return NSImage(size: glyph.size, flipped: false) { bounds in
+            glyph.draw(in: bounds)
+            let side = bounds.height / 2
+            let corner = NSRect(x: bounds.maxX - side, y: bounds.minY, width: side, height: side)
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(ovalIn: corner.insetBy(dx: -1, dy: -1)).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            mark?.draw(in: corner)
+            return true
         }
-        image.isTemplate = true
-        image.accessibilityDescription = recording ? "Earshot, recording" : "Earshot"
-        return image
     }
 }
 
@@ -91,10 +125,10 @@ struct MenuContent: View {
         @Bindable var preferences = controller.preferences
         VStack(alignment: .leading, spacing: 12) {
             status
+            ForEach(controller.shownProblems) { problem in
+                ProblemRow(problem: problem)
+            }
             if controller.library.selection == nil, !controller.isRecording {
-                Text("Earshot needs a transcription model before it can listen.")
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
                 Button {
                     navigation.browsingModels = true
                     show(.settings)
@@ -132,10 +166,6 @@ struct MenuContent: View {
                 "Translate into \(Languages.displayName(controller.primaryLanguage))",
                 isOn: $controller.translationEnabled)
 
-            if let error = controller.lastError {
-                Text(error).font(.caption).foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             Divider()
             HStack {
                 Button("Open Earshot") { show(.transcripts) }
@@ -145,7 +175,10 @@ struct MenuContent: View {
         }
         .padding()
         .frame(width: 300)
-        .onAppear { controller.prewarm() }
+        .onAppear {
+            controller.needsAttention = false
+            controller.prewarm()
+        }
         .onDisappear { controller.scheduleUnload() }
     }
 
@@ -172,15 +205,6 @@ struct MenuContent: View {
         Task {
             if controller.isRecording {
                 await controller.stop()
-                if let file = controller.savedFile,
-                    let markdown = try? String(contentsOf: file, encoding: .utf8),
-                    !SpeakerNames.speakers(in: markdown).isEmpty
-                {
-                    navigation.naming = file
-                    show(.transcripts)
-                } else {
-                    controller.sessionFinished()
-                }
                 return
             }
             show(.transcripts)
