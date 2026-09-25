@@ -70,6 +70,12 @@ Only where they carry what the code cannot:
 
 Not for restating the code. If a block needs a comment to be followed, it usually needs a better name or to be smaller.
 
+### Interface
+
+Earshot looks and behaves like a first-party Mac app: native SwiftUI and AppKit controls, standard placements, system fonts, materials, and colours, in light and dark mode. Reach for a custom control, a custom style, or a placement that macOS does not offer only after the maintainer has agreed to it. When the native way cannot do what a design asks for, stop and say so before building anything else, with the options and what each gives up. For example, macOS has no bottom toolbar (`ToolbarItemPlacement.bottomBar` is unavailable there), so a control drawn at the bottom of a window is custom.
+
+Check every visible change on screen before handing it over: build, open the state that changed, and look at a screenshot of Earshot's own window with `mise run screenshot`. Never capture the whole screen.
+
 ### Tests
 
 Three layers, each covering what the one below cannot:
