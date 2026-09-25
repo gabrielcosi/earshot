@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import GRDB
 
@@ -43,12 +44,19 @@ struct ParagraphEditRecord: Codable, FetchableRecord, PersistableRecord {
     var deleted: Bool
 }
 
+/// One speaker's name in one transcript. Its id comes from the two, so the same speaker named on
+/// two Macs is one record. Names stored before that have a random id, which is replaced when the
+/// name next changes.
 struct SpeakerNameRecord: Codable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "speaker_name"
     var id: UUID
     var transcriptId: UUID
     var speaker: String
     var name: String
+
+    static func id(of speaker: String, in transcript: UUID) -> UUID {
+        UUID(v5: speaker, in: transcript)
+    }
 }
 
 /// A paragraph's translation, current only while the paragraph's text hashes to `sourceHash`.
@@ -119,5 +127,17 @@ extension Speaker {
             }
             self = .remote(slot: slot)
         }
+    }
+}
+
+extension UUID {
+    /// A name-based UUID (RFC 9562, version 5): the same namespace and name always make the same
+    /// one.
+    init(v5 name: String, in namespace: UUID) {
+        let bytes = withUnsafeBytes(of: namespace.uuid) { Array($0) } + Array(name.utf8)
+        var hash = Array(Insecure.SHA1.hash(data: bytes).prefix(16))
+        hash[6] = (hash[6] & 0x0F) | 0x50
+        hash[8] = (hash[8] & 0x3F) | 0x80
+        self = hash.withUnsafeBytes { UUID(uuid: $0.loadUnaligned(as: uuid_t.self)) }
     }
 }

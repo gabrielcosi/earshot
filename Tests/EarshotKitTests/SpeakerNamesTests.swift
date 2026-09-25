@@ -69,7 +69,8 @@ import Testing
 
     @Test func aNamedSpeakerIsOfferedUnderTheirName() throws {
         _ = try view([Word(word: "Hello", start: 1, end: 2, speaker: 1)])
-        try store.rename(id, [.remote(slot: 1): "John Doe"])
+        try store.seal(id, at: .now)
+        try store.setNames([.remote(slot: 1): "John Doe"], in: id)
         #expect(try store.view(id)?.speakersToName().map(\.label) == ["John Doe"])
     }
 
@@ -116,5 +117,43 @@ import Testing
     func aNameIsFoundInScriptsWithoutSpaces(name: String, line: String) {
         let text = "**Speaker 1** [00:00]: \(line)\n"
         #expect(SpeakerNames.evidence(for: name, in: text) == line)
+    }
+
+    @Test func aNameIsTrimmedAndAnEmptyOneClearsTheName() throws {
+        #expect(
+            try SpeakerNames.validate("  John Doe ", for: .remote(slot: 1), names: [:])
+                == "John Doe")
+        #expect(try SpeakerNames.validate(" \n ", for: .remote(slot: 1), names: [:]) == nil)
+    }
+
+    /// The Markdown file writes each label in bold on its own line, and reads it back that way.
+    @Test func aNameCannotBreakTheMarkdownLine() {
+        #expect(throws: SpeakerNames.InvalidName.lineBreak) {
+            try SpeakerNames.validate("John\nDoe", for: .remote(slot: 1), names: [:])
+        }
+        #expect(throws: SpeakerNames.InvalidName.markdown) {
+            try SpeakerNames.validate("John**Doe", for: .remote(slot: 1), names: [:])
+        }
+    }
+
+    /// A speaker named "Speaker 2" could not be told from the one Earshot calls that.
+    @Test(arguments: ["Me", "me", "Unknown speaker", "REMOTE", "Speaker 3", "speaker 12"])
+    func aLabelEarshotUsesIsNotAName(name: String) {
+        #expect(throws: SpeakerNames.InvalidName.reserved(name)) {
+            try SpeakerNames.validate(" \(name) ", for: .remote(slot: 1), names: [:])
+        }
+    }
+
+    @Test(arguments: ["Speaker Jones", "Speaker 3b", "Meg"])
+    func aNameThatOnlyStartsLikeALabelIsAName(name: String) throws {
+        #expect(try SpeakerNames.validate(name, for: .remote(slot: 1), names: [:]) == name)
+    }
+
+    @Test func twoSpeakersCannotShareAName() throws {
+        let names: [Speaker: String] = [.remote(slot: 1): "Jane"]
+        #expect(throws: SpeakerNames.InvalidName.taken(by: .remote(slot: 1))) {
+            try SpeakerNames.validate(" jane", for: .remote(slot: 2), names: names)
+        }
+        #expect(try SpeakerNames.validate("Jane", for: .remote(slot: 1), names: names) == "Jane")
     }
 }

@@ -125,7 +125,7 @@ struct LiveBars: View {
     }
 }
 
-private struct SpeakerName: View {
+struct SpeakerName: View {
     let name: String
     let badge: String
     let colour: NSColor

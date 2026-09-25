@@ -13,6 +13,7 @@ import Testing
 
     private func stored(_ utterances: [Utterance]) throws -> StoredTranscript {
         try store.saveLive(id, startedAt: .now, utterances: utterances)
+        try store.seal(id, at: .now)
         return try #require(try store.view(id))
     }
 
@@ -38,7 +39,7 @@ import Testing
             Utterance(speaker: .unknown, start: 4, end: 5, text: "d"),
             Utterance(speaker: .remote(slot: 0), start: 5, end: 6, text: "e"),
         ])
-        try store.rename(id, [.remote(slot: 1): "ada"])
+        try store.setNames([.remote(slot: 1): "ada"], in: id)
         let lines = TranscriptLine.lines(in: try #require(try store.view(id)))
         #expect(lines.map(\.badge) == ["3", "M", "A", "?", "R"])
     }
@@ -67,7 +68,7 @@ import Testing
 
         _ = try stored(transcript.utterances)
         try store.setTranslation("Hello everyone", of: first.text, language: "en", for: first.id)
-        try store.rename(id, names)
+        try store.setNames(names.mapValues(Optional.some), in: id)
         let live = TranscriptLine.lines(in: transcript, names: names, rules: rules)
         let saved = TranscriptLine.lines(in: try #require(try store.view(id)), rules: rules)
 

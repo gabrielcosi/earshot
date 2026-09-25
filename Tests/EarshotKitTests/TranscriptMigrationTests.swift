@@ -92,7 +92,7 @@ import Testing
         let view = try only()
         let exporter = TranscriptExporter(store: store)
         #expect(try exporter.status(of: view.id, in: folder) == .current(file))
-        try store.rename(view.id, [.remote(slot: 1): "Jane Doe"])
+        try store.setNames([.remote(slot: 1): "Jane Doe"], in: view.id)
         try exporter.export(view.id, to: folder)
         #expect(try String(contentsOf: file, encoding: .utf8).contains("**Jane Doe** [00:03.50]"))
     }
@@ -107,7 +107,7 @@ import Testing
         let view = try only()
         let exporter = TranscriptExporter(store: store)
         #expect(try exporter.status(of: view.id, in: folder) == .edited(file))
-        try store.rename(view.id, [.remote(slot: 1): "Jane Doe"])
+        try store.setNames([.remote(slot: 1): "Jane Doe"], in: view.id)
         #expect(try exporter.export(view.id, to: folder) == .edited(file))
         #expect(try String(contentsOf: file, encoding: .utf8) == text)
         #expect(try store.unexported().isEmpty)
@@ -319,7 +319,7 @@ import Testing
         let exporter = TranscriptExporter(store: store)
         try exporter.export(id, to: folder)
         try await migration.run(in: other, isCurrent: { false })
-        try store.rename(id, [.remote(slot: 1): "Jane"])
+        try store.setNames([.remote(slot: 1): "Jane"], in: id)
         try exporter.export(id, to: other)
 
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path)

@@ -23,6 +23,8 @@ public struct StoredTranscript: Identifiable, Sendable, Equatable {
     /// The kept audio's file name in the store's audio folder.
     public let audio: String?
     public let paragraphs: [Paragraph]
+    /// Who spoke as it was heard, in order of first appearance, whatever edits did since.
+    public let speakers: [Speaker]
     public let names: [Speaker: String]
     public let summary: TranscriptDocument.Summary?
 
@@ -30,14 +32,21 @@ public struct StoredTranscript: Identifiable, Sendable, Equatable {
         names[speaker] ?? speaker.label
     }
 
-    /// What each speaker is called now, as the summary would mention them.
+    /// What each speaker is called now, as the summary would mention them: also those who no
+    /// longer have a line, whom a summary written earlier still mentions.
     public var labels: [Speaker: String] {
         Dictionary(
-            paragraphs.map { ($0.speaker, label($0.speaker)) },
+            (speakers + paragraphs.map(\.speaker)).map { ($0, label($0)) },
             uniquingKeysWith: { first, _ in first })
     }
 
     public var length: Double? { paragraphs.map(\.end).max() }
+
+    /// How long `speaker` talks in the lines they have now. Zero for a transcript imported from
+    /// 0.1, which kept no ends.
+    public func talkTime(of speaker: Speaker) -> Double {
+        paragraphs.filter { $0.speaker == speaker }.reduce(0) { $0 + $1.end - $1.start }
+    }
 
     /// The Markdown copy, in the format Earshot has always written.
     public func markdown(rules: WordRules? = nil) -> String {

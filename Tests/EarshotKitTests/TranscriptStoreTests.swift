@@ -138,35 +138,13 @@ import Testing
         #expect(try store.view(id)?.paragraphs.map(\.text) == ["said"])
     }
 
-    @Test func renamingNamesTheSpeakerAndRewritesTheSummarysMentions() throws {
-        try store.saveLive(
-            id, startedAt: started, utterances: final("Hi", speaker: 2, at: 0).utterances)
-        try store.setSummary(
-            "Speaker 2 opened. Speaker 22 did not.", model: "m", for: id,
-            labelsAtStart: [.remote(slot: 2): "Speaker 2"])
-
-        try store.rename(id, [.remote(slot: 2): " John Doe "])
-        let view = try #require(try store.view(id))
-        #expect(view.label(.remote(slot: 2)) == "John Doe")
-        #expect(view.summary?.text == "John Doe opened. Speaker 22 did not.")
-
-        try store.rename(id, [.remote(slot: 2): "Jane"])
-        #expect(try store.view(id)?.summary?.text == "Jane opened. Speaker 22 did not.")
-    }
-
-    @Test func anEmptyNameKeepsTheLabel() throws {
-        try store.saveLive(
-            id, startedAt: started, utterances: final("Hi", speaker: 2, at: 0).utterances)
-        try store.rename(id, [.remote(slot: 2): "  "])
-        #expect(try store.view(id)?.label(.remote(slot: 2)) == "Speaker 2")
-    }
-
     /// A summary takes up to a minute; a rename made meanwhile must not be undone by it.
     @Test func aSummaryStartedBeforeARenameLandsWithTheNewName() throws {
         try store.saveLive(
             id, startedAt: started, utterances: final("Hi", speaker: 2, at: 0).utterances)
+        try store.seal(id, at: started)
         let labels = try #require(try store.view(id)).labels
-        try store.rename(id, [.remote(slot: 2): "John Doe"])
+        try store.setNames([.remote(slot: 2): "John Doe"], in: id)
 
         try store.setSummary("Speaker 2 opened.", model: "m", for: id, labelsAtStart: labels)
         let view = try #require(try store.view(id))
@@ -333,7 +311,8 @@ import Testing
         try store.saveLive(id, startedAt: .now, utterances: transcript.utterances)
         try store.setTranslation("Hello", of: "Hallo", language: "en", for: paragraph)
         try store.setEdit(ParagraphEdit(text: "Hi"), of: paragraph)
-        try store.rename(id, [.remote(slot: 1): "Jane"])
+        try store.seal(id, at: .now)
+        try store.setNames([.remote(slot: 1): "Jane"], in: id)
         try store.setSummary("s", model: "m", for: id, labelsAtStart: [:])
         try store.recordExport(of: id, at: URL(filePath: "/tmp/x.md"), contents: Data())
 

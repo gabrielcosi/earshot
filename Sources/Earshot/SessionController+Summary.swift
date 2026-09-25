@@ -39,29 +39,38 @@ extension SessionController {
         problems.resolve { if case .summaryFailed = $0 { true } else { false } }
     }
 
-    /// A session that just ended with speakers to name, for the naming sheet.
+    /// A session that just ended with speakers to name, for the speakers panel.
     struct NamingRequest: Equatable {
         let transcript: UUID
-        /// Only a stop the user pressed brings the window up; otherwise the sheet waits for the
+        /// Only a stop the user pressed brings the window up; otherwise the panel waits for the
         /// next time the window opens.
         let opensWindow: Bool
     }
 
     /// Every stopped session goes through here, whether stopped from the menu or ended by a lost
-    /// engine: one with speakers to name asks for its naming sheet, and is summarized after it.
+    /// engine: one with speakers to name asks for the speakers panel, and is summarized once
+    /// naming is done.
     func sessionEnded(byUser: Bool) {
         // Naming and a summary cannot finish once the app is gone.
         guard !quitting else { return }
-        if let savedID, let view = try? store.view(savedID), !view.speakersToName().isEmpty {
+        guard let savedID else { return discardLastRecording() }
+        awaitingNaming = savedID
+        if let view = try? store.view(savedID), !view.speakersToName().isEmpty {
             namingRequest = NamingRequest(transcript: savedID, opensWindow: byUser)
         } else {
-            sessionFinished()
+            finishNaming(savedID)
         }
     }
 
-    /// Called once the session that just ended is done with naming, so the notes use the names.
-    func sessionFinished() {
-        guard preferences.summarizeAutomatically, let savedID else { return }
-        Task { await summarize(savedID) }
+    /// Naming the session that just ended is done: its temporary recording is deleted, and its
+    /// notes are written with the names. Runs once per session, for `transcript` when given.
+    func finishNaming(_ transcript: UUID? = nil) {
+        guard let awaiting = awaitingNaming, transcript.map({ $0 == awaiting }) ?? true else {
+            return
+        }
+        awaitingNaming = nil
+        discardLastRecording()
+        guard preferences.summarizeAutomatically else { return }
+        Task { await summarize(awaiting) }
     }
 }

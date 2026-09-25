@@ -44,21 +44,31 @@ extension SessionController {
         problems.report(.savingFailed(Self.actionable(error)))
     }
 
-    /// Names a transcript's speakers in the store, and in the session still open in the app.
-    func name(speakers names: [Speaker: String], in transcript: UUID) {
+    /// Names speakers in the store, and in the session still open in the app, as one step that
+    /// Undo takes back and Redo does again. False when the names were not stored.
+    @discardableResult
+    func setNames(
+        _ names: [Speaker: String?], in transcript: UUID, undoManager: UndoManager?
+    ) -> Bool {
+        let previous: [Speaker: String?]
         do {
-            try store.rename(transcript, names)
+            previous = try store.setNames(names, in: transcript)
+        } catch is SpeakerNames.InvalidName, is TranscriptStore.NotSealed {
+            // The panel checks each name, and names only an ended session, before it stores.
+            log.error("names were refused: \(names.count) for \(transcript, privacy: .public)")
+            return false
         } catch {
             reportSavingFailed(error)
-            return
+            return false
         }
-        if transcript == savedID {
-            for (speaker, name) in names {
-                let name = name.trimmingCharacters(in: .whitespaces)
-                if !name.isEmpty { self.names[speaker] = name }
-            }
-        }
+        guard !previous.isEmpty else { return true }
+        if transcript == savedID, let view = try? store.view(transcript) { self.names = view.names }
         scheduleExport(transcript)
+        undoManager?.registerUndo(withTarget: self) { [weak undoManager] controller in
+            controller.setNames(previous, in: transcript, undoManager: undoManager)
+        }
+        undoManager?.setActionName("Rename Speaker")
+        return true
     }
 
     /// At launch, before a session can start: a session a crash or a forced quit left open is

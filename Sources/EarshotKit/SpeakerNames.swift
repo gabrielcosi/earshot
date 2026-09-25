@@ -21,18 +21,67 @@ public enum SpeakerNames {
         public let end: Double?
     }
 
-    /// Writes `names` over their labels wherever `text` mentions a label as a whole word, as a
-    /// summary does.
-    public static func renameMentions(in text: String, _ names: [String: String]) -> String {
-        var text = text
-        for (label, name) in names {
-            let name = name.trimmingCharacters(in: .whitespaces)
-            guard !name.isEmpty, let regex = wholeWord(label) else { continue }
-            text = regex.stringByReplacingMatches(
-                in: text, range: NSRange(text.startIndex..., in: text),
-                withTemplate: NSRegularExpression.escapedTemplate(for: name))
+    /// Why a name cannot be given, as the naming panel says it.
+    public enum InvalidName: Error, Equatable {
+        case lineBreak
+        case markdown
+        case reserved(String)
+        case taken(by: EarshotKit.Speaker)
+
+        public var message: String {
+            switch self {
+            case .lineBreak: "A name must fit on one line."
+            case .markdown: "A name can’t contain **."
+            case .reserved(let name): "“\(name)” is a label Earshot uses. Choose another name."
+            case .taken(let speaker): "\(speaker.label) already has this name."
+            }
         }
-        return text
+    }
+
+    /// The name as it is stored: trimmed, and nil for an empty one, which gives the speaker back
+    /// their label. The Markdown file writes each label in bold at the start of its line and reads
+    /// it back that way, so a name must not break the line or the bold, nor read as a label
+    /// Earshot gives, nor as another speaker's name in `names`.
+    public static func validate(
+        _ name: String, for speaker: EarshotKit.Speaker, names: [EarshotKit.Speaker: String]
+    ) throws(InvalidName) -> String? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        if name.contains(where: \.isNewline) { throw .lineBreak }
+        if name.contains("**") { throw .markdown }
+        let labels = [EarshotKit.Speaker.me, .unknown, .remote(slot: 0)].map(\.label)
+        if labels.contains(where: { $0.localizedCaseInsensitiveCompare(name) == .orderedSame })
+            || name.wholeMatch(of: /(?i)speaker \d+/) != nil
+        {
+            throw .reserved(name)
+        }
+        if let other = names.first(where: {
+            $0.key != speaker && $0.value.localizedCaseInsensitiveCompare(name) == .orderedSame
+        }) {
+            throw .taken(by: other.key)
+        }
+        return name
+    }
+
+    /// Writes each label's new name wherever `text` mentions the label as a whole word, as a
+    /// summary does, in one pass: `names` maps every label to what it becomes, unchanged ones to
+    /// themselves, so a swap or a name passed on is not renamed twice, and a label inside a longer
+    /// one ("Bob" in "Bob Smith") is matched only when the longer one is not.
+    public static func renameMentions(in text: String, _ names: [String: String]) -> String {
+        let labels = names.keys.filter { !$0.isEmpty }.sorted { $0.count > $1.count }
+        guard names.contains(where: { $0.key != $0.value }), !labels.isEmpty,
+            let regex = wholeWord(labels)
+        else { return text }
+        var renamed = ""
+        var rest = text.startIndex
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let range = Range(match.range, in: text) else { continue }
+            let label = String(text[range])
+            let name = names[label]?.trimmingCharacters(in: .whitespaces) ?? ""
+            renamed += text[rest..<range.lowerBound] + (name.isEmpty ? label : name)
+            rest = range.upperBound
+        }
+        return renamed + text[rest...]
     }
 
     /// Where the transcript says `name`, to show where a suggestion came from: the sentence
@@ -49,7 +98,7 @@ public enum SpeakerNames {
         else { return nil }
         for line in lines {
             let text = String(line.3)
-            if let match = wholeWord(name, options: .caseInsensitive)?.firstMatch(
+            if let match = wholeWord([name], options: .caseInsensitive)?.firstMatch(
                 in: text, range: NSRange(text.startIndex..., in: text)),
                 let range = Range(match.range, in: text)
             {
@@ -91,13 +140,16 @@ public enum SpeakerNames {
             + (end < sentence.upperBound ? "…" : "")
     }
 
-    /// `text` as a whole word, not inside a longer one. Unicode word boundaries find words in
-    /// scripts written without spaces, such as Japanese, Chinese, and Thai.
+    /// Any of `texts` as a whole word, not inside a longer one, trying them in order. Unicode
+    /// word boundaries find words in scripts written without spaces, such as Japanese, Chinese,
+    /// and Thai.
     private static func wholeWord(
-        _ text: String, options: NSRegularExpression.Options = []
+        _ texts: [String], options: NSRegularExpression.Options = []
     ) -> NSRegularExpression? {
         try? NSRegularExpression(
-            pattern: "\\b" + NSRegularExpression.escapedPattern(for: text) + "\\b",
+            pattern: "\\b(?:"
+                + texts.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
+                + ")\\b",
             options: options.union(.useUnicodeWordBoundaries))
     }
 }

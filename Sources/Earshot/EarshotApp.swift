@@ -125,7 +125,7 @@ struct MenuBarLabel: View {
             NSApp.activate()
         }
         // The label lives as long as the app, so a session that ends while the menu is closed
-        // still gets its naming sheet, the next time the window opens.
+        // still gets its speakers panel, the next time the window opens.
         .onChange(of: controller.namingRequest) {
             guard let request = controller.namingRequest else { return }
             controller.namingRequest = nil

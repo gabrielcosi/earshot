@@ -249,7 +249,8 @@ extension TranscriptStore {
             }
             for (speaker, name) in names {
                 try SpeakerNameRecord(
-                    id: UUID(), transcriptId: id, speaker: speaker.key, name: name
+                    id: SpeakerNameRecord.id(of: speaker.key, in: id), transcriptId: id,
+                    speaker: speaker.key, name: name
                 ).insert(db)
             }
             if let summary = document.summary {

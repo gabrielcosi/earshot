@@ -30,6 +30,8 @@ final class SessionController {
     /// played; deleted then, at the next start, or when the app quits.
     var lastRecording: Recording?
     var namingRequest: NamingRequest?
+    /// The session that just ended, until naming its speakers is done: `finishNaming`.
+    @ObservationIgnored var awaitingNaming: UUID?
     /// A session ended on its own and the menu has not been opened since.
     var needsAttention = false
     /// The app is quitting: the session ends and saves, with nothing after it.
@@ -147,7 +149,7 @@ final class SessionController {
         state = .starting
         problems.startSession()
         unload?.cancel()
-        discardLastRecording()
+        finishNaming()
         do {
             let useMicrophone = preferences.useMicrophone
             if useMicrophone {

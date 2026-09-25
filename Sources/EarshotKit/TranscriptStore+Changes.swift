@@ -4,23 +4,47 @@ import GRDB
 // MARK: - Names and the summary
 
 extension TranscriptStore {
-    /// Names speakers, and writes the new names over the old labels wherever the summary mentions
-    /// them. An empty name leaves the speaker as they were.
-    public func rename(_ transcript: UUID, _ names: [Speaker: String]) throws {
+    /// The session being recorded is still changing, so it is named once it ends.
+    public struct NotSealed: Error {}
+
+    /// Names speakers, nil giving one back their label, and writes the new names over the old
+    /// ones wherever the summary mentions them. Every name is checked against the names as they
+    /// will be, so two speakers can swap names in one change, and nothing is written when one is
+    /// invalid. Returns the names the changed speakers had: setting them back undoes the change.
+    @discardableResult
+    public func setNames(_ names: [Speaker: String?], in transcript: UUID) throws -> [Speaker:
+        String?]
+    {
         try writer.write { db in
-            guard let before = try Self.view(transcript, in: db) else { return }
+            guard let before = try Self.view(transcript, in: db) else { return [:] }
+            guard before.endedAt != nil else { throw NotSealed() }
+            var after = before.names
             for (speaker, name) in names {
-                let name = name.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { continue }
-                var record =
-                    try SpeakerNameRecord.filter(Column("transcriptId") == transcript)
-                    .filter(Column("speaker") == speaker.key).fetchOne(db)
-                    ?? SpeakerNameRecord(
-                        id: UUID(), transcriptId: transcript, speaker: speaker.key, name: name)
-                record.name = name
-                try record.upsert(db)
+                after[speaker] = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            after = after.filter { !$0.value.isEmpty }
+            for speaker in names.keys {
+                if let name = after[speaker] {
+                    after[speaker] = try SpeakerNames.validate(name, for: speaker, names: after)
+                }
+            }
+            var previous: [Speaker: String?] = [:]
+            for speaker in names.keys where before.names[speaker] != after[speaker] {
+                previous.updateValue(before.names[speaker], forKey: speaker)
+                let id = SpeakerNameRecord.id(of: speaker.key, in: transcript)
+                try SpeakerNameRecord.filter(Column("transcriptId") == transcript)
+                    .filter(Column("speaker") == speaker.key).filter(Column("id") != id)
+                    .deleteAll(db)
+                if let name = after[speaker] {
+                    try SpeakerNameRecord(
+                        id: id, transcriptId: transcript, speaker: speaker.key, name: name
+                    ).upsert(db)
+                } else {
+                    try SpeakerNameRecord.deleteOne(db, key: id)
+                }
             }
             try Self.updateSummaryLabels(transcript, from: before.labels, in: db)
+            return previous
         }
     }
 
@@ -51,12 +75,10 @@ extension TranscriptStore {
             var summary = try SummaryRecord.filter(Column("transcriptId") == transcript)
                 .fetchOne(db)
         else { return }
-        var changed: [String: String] = [:]
-        for (speaker, label) in old where now[speaker].map({ $0 != label }) == true {
-            changed[label] = now[speaker]
-        }
-        guard !changed.isEmpty else { return }
-        summary.text = SpeakerNames.renameMentions(in: summary.text, changed)
+        var renamed: [String: String] = [:]
+        for (speaker, label) in old { renamed[label] = now[speaker] ?? label }
+        guard renamed.contains(where: { $0.key != $0.value }) else { return }
+        summary.text = SpeakerNames.renameMentions(in: summary.text, renamed)
         try summary.update(db)
     }
 }

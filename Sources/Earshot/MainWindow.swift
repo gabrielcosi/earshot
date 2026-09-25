@@ -25,31 +25,48 @@ final class Navigation {
     /// Set when Earshot is opened again while it runs with no window; the menu bar label opens
     /// the main window, since the app delegate cannot.
     var windowRequested = false
-    /// A stored transcript to open with its naming sheet: set when a session stops, and by Name
-    /// Speakers.
+    /// A stored transcript to open with the speakers panel: set when a session stops.
     var naming: UUID?
+    /// The speakers panel beside the transcript, opened and closed by Name Speakers.
+    var showsSpeakers = false
+}
+
+extension Navigation.Item {
+    /// The transcript in the store; the live session's is `live`, once its first line is stored.
+    func transcript(live: UUID?) -> UUID? {
+        switch self {
+        case .live: live
+        case .saved(let transcript): transcript
+        }
+    }
 }
 
 /// The transcripts: the live session and the saved ones in the sidebar, the selected one beside.
 struct MainWindow: View {
     @Environment(Navigation.self) private var navigation
     @Environment(SessionController.self) private var controller
+    @Environment(\.undoManager) private var undoManager
     @State private var saved = SavedTranscripts()
-    @State private var naming: NamingTarget?
     /// The transcript last selected, selected again when the window opens. App storage, not
     /// scene storage: SwiftUI destroys a scene's stored state when its window is closed on macOS,
     /// and Earshot's one window is closed and reopened all the time.
     @AppStorage("lastTranscript") private var lastTranscript = ""
 
     var body: some View {
+        @Bindable var navigation = navigation
         NavigationSplitView {
             TranscriptSidebar(saved: saved)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 340)
         } detail: {
             detail
+                .inspector(isPresented: $navigation.showsSpeakers) {
+                    SpeakersPanel(transcript: shownTranscript)
+                        .id(shownTranscript)
+                        // The approved design's width.
+                        .inspectorColumnWidth(ideal: 320)
+                }
         }
         .frame(minWidth: 640, minHeight: 420)
-        .sheet(item: $naming) { target in NamingView(transcript: target.transcript) }
         // Here rather than on a view inside, so the prompt shows whatever is selected.
         .translationTask(controller.downloadRequest) { session in
             let (source, target) = (session.sourceLanguage, session.targetLanguage)
@@ -65,8 +82,17 @@ struct MainWindow: View {
             controller.preferences.openWindows += 1
             takeNamingRequest()
         }
-        .onDisappear { controller.preferences.openWindows -= 1 }
+        .onDisappear {
+            controller.preferences.openWindows -= 1
+            controller.finishNaming()
+        }
         .onChange(of: navigation.naming) { takeNamingRequest() }
+        // Undo is for the transcript on screen. The live session keeps its transcript when it
+        // stops and opens as a saved one, so that is no change.
+        .onChange(of: shownTranscript) { old, _ in
+            undoManager?.removeAllActions()
+            if let old { controller.finishNaming(old) }
+        }
         .onChange(of: navigation.selection) {
             if case .saved(let transcript) = navigation.selection {
                 lastTranscript = transcript.uuidString
@@ -83,6 +109,8 @@ struct MainWindow: View {
         let item = navigation.selection ?? (controller.isRecording ? .live : nil)
         return item == .live && !controller.hasLiveSession ? nil : item
     }
+
+    private var shownTranscript: UUID? { shown?.transcript(live: controller.savedID) }
 
     @ViewBuilder private var detail: some View {
         switch shown {
@@ -108,12 +136,12 @@ struct MainWindow: View {
         }
     }
 
-    /// A session that just stopped opens selected, with its naming sheet.
+    /// A session that just stopped opens selected, with the speakers panel.
     private func takeNamingRequest() {
         guard let transcript = navigation.naming else { return }
         navigation.naming = nil
         navigation.selection = .saved(transcript)
-        naming = NamingTarget(transcript: transcript)
+        navigation.showsSpeakers = true
     }
 
     /// Nothing selected: the transcript selected last time, or the newest if that one is gone.
@@ -134,9 +162,4 @@ extension SessionController {
     var hasLiveSession: Bool {
         state != .idle || !transcript.utterances.isEmpty
     }
-}
-
-private struct NamingTarget: Identifiable {
-    let transcript: UUID
-    var id: UUID { transcript }
 }

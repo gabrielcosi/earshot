@@ -67,7 +67,8 @@ struct TranscriptPage: View {
         .navigationSubtitle(subtitle)
         .toolbar {
             TranscriptToolbar(
-                transcript: transcript, isLive: isLive, audio: controller.keptAudio(stored),
+                transcript: transcript, isLive: isLive, sealed: stored?.endedAt != nil,
+                audio: controller.keptAudio(stored),
                 showsTranslation: showsTranslation)
         }
         .onChange(of: controller.transcript.utterances, initial: true) { showLive() }

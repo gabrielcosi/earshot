@@ -45,7 +45,7 @@ import Testing
 
     @Test func anUnchangedExportFollowsTheStore() throws {
         try exporter.export(id, to: folder)
-        try store.rename(id, [.remote(slot: 1): "Jane"])
+        try store.setNames([.remote(slot: 1): "Jane"], in: id)
         #expect(try exporter.export(id, to: folder) == .current(expectedFile))
         #expect(try contents(expectedFile).contains("**Jane** [00:01.00]: Hello"))
     }
@@ -55,7 +55,7 @@ import Testing
         let edited = try contents(expectedFile) + "\nMy own notes.\n"
         try edited.write(to: expectedFile, atomically: true, encoding: .utf8)
 
-        try store.rename(id, [.remote(slot: 1): "Jane"])
+        try store.setNames([.remote(slot: 1): "Jane"], in: id)
         #expect(try exporter.export(id, to: folder) == .edited(expectedFile))
         #expect(try contents(expectedFile) == edited)
         #expect(try exporter.status(of: id, in: folder) == .edited(expectedFile))
@@ -116,7 +116,7 @@ import Testing
         try exporter.export(id, to: folder)
         let old = try contents(expectedFile)
         let moved = folder.appending(path: "Moved")
-        try store.rename(id, [.remote(slot: 1): "Jane"])
+        try store.setNames([.remote(slot: 1): "Jane"], in: id)
 
         let status = try exporter.export(id, to: moved)
         #expect(status == .current(moved.appending(path: MarkdownExport.filename(for: started))))
@@ -134,7 +134,7 @@ import Testing
         try exporter.saveCopy(id, to: copy, folder: folder)
         #expect(try exporter.status(of: id, in: folder) == .current(copy))
         #expect(try contents(expectedFile) == "edited")
-        try store.rename(id, [.remote(slot: 1): "Jane"])
+        try store.setNames([.remote(slot: 1): "Jane"], in: id)
         #expect(try exporter.export(id, to: folder) == .current(copy))
         #expect(try contents(copy).contains("**Jane**"))
     }
@@ -168,7 +168,8 @@ import Testing
         try store.saveLive(other, startedAt: started, utterances: transcript.utterances)
         try store.setTranslation(
             "Hello", of: "Hallo", language: "en", for: transcript.utterances[0].id)
-        try store.rename(other, [.remote(slot: 2): "Jane"])
+        try store.seal(other, at: started)
+        try store.setNames([.remote(slot: 2): "Jane"], in: other)
         try store.setSummary("Jane said hi.", model: "m", for: other, labelsAtStart: [:])
 
         // As 0.1 wrote it: the title, the summary above a rule, then each line with its time to

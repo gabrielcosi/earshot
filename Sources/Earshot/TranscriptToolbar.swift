@@ -15,6 +15,8 @@ struct TranscriptToolbar: ToolbarContent {
     /// Nil until the live session's first line is stored.
     let transcript: UUID?
     let isLive: Bool
+    /// The session has ended in the store; only then can its speakers be named.
+    let sealed: Bool
     /// The kept audio, when there is some.
     let audio: URL?
     let showsTranslation: Bool
@@ -23,6 +25,7 @@ struct TranscriptToolbar: ToolbarContent {
     @AppStorage(TranscriptSettings.display) private var display = TranslationDisplay.both
 
     var body: some ToolbarContent {
+        @Bindable var navigation = navigation
         if showsTranslation {
             ToolbarItem {
                 Picker("Show", selection: $display) {
@@ -66,9 +69,9 @@ struct TranscriptToolbar: ToolbarContent {
             }
             .help("Write an overview, decisions, and action items above the transcript")
             .disabled(transcript == nil || busy || summarizing)
-            Button("Name Speakers…", systemImage: "person.2") { navigation.naming = transcript }
-                .help("Name the speakers")
-                .disabled(transcript == nil || busy)
+            Toggle("Name Speakers", systemImage: "person.2", isOn: $navigation.showsSpeakers)
+                .help("Show or hide the speakers, to name them")
+                .disabled(!navigation.showsSpeakers && !sealed)
         }
     }
 

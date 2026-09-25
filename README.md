@@ -28,7 +28,7 @@ Earshot checks for signed updates automatically. Use **Check for Updates…** in
 
 ## Use
 
-Click the ear in the menu bar and choose **Start listening**. The transcript window opens and fills in as people speak: each finished line becomes a card, and the words still being recognized wait in a bar at the bottom. Choose **Stop** when you're done: Earshot tidies the speaker boundaries and asks you to name the speakers, with a few of their lines to read and play.
+Click the ear in the menu bar and choose **Start listening**. The transcript window opens and fills in as people speak: each finished line becomes a card, and the words still being recognized wait in a bar at the bottom. Choose **Stop** when you're done: Earshot tidies the speaker boundaries and opens the speakers beside the transcript, with a few of their lines to read and play, to name them. Return saves a name, ⌘Z undoes it, and **Done** closes the panel; **Name Speakers** in the toolbar opens it again.
 
 The window lists your transcripts by day, with the session in progress on top. Press ⌘+ and ⌘− to change the text size, and use the switch in the toolbar to show the original, the translation, or both. Everything else is in **Settings** (⌘,).
 
@@ -44,7 +44,7 @@ Earshot keeps your transcripts in its own library and writes a Markdown copy of 
 
 ## Privacy
 
-Audio never leaves your Mac. Recognition, speaker detection, and translation all run locally, and audio is only kept after a session when **Keep audio** is on; until you name the speakers, the session's recording waits in a temporary file so you can listen to them. Transcripts and kept audio stay on your Mac, in Earshot's own storage.
+Audio never leaves your Mac. Recognition, speaker detection, and translation all run locally, and audio is only kept after a session when **Keep audio** is on; until you're done naming the speakers, the session's recording waits in a temporary file so you can listen to them. Transcripts and kept audio stay on your Mac, in Earshot's own storage.
 
 Earshot goes online for three things:
 

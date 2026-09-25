@@ -266,7 +266,15 @@ extension TranscriptStore {
             try TranslationRecord.filter(ids.contains(Column("paragraphId")))
                 .order(Column("createdAt")).fetchAll(db).map { ($0.paragraphId, $0) },
             uniquingKeysWith: { _, last in last })
-        let names = try SpeakerNameRecord.filter(Column("transcriptId") == id).fetchAll(db)
+        // A name with a random id, from before ids were fixed, gives way to one with the fixed id.
+        var names: [Speaker: SpeakerNameRecord] = [:]
+        for record in try SpeakerNameRecord.filter(Column("transcriptId") == id).fetchAll(db) {
+            guard let speaker = Speaker(key: record.speaker),
+                names[speaker] == nil
+                    || record.id == SpeakerNameRecord.id(of: record.speaker, in: id)
+            else { continue }
+            names[speaker] = record
+        }
         let summary = try SummaryRecord.filter(Column("transcriptId") == id).fetchOne(db)
         return StoredTranscript(
             id: id, startedAt: transcript.startedAt, endedAt: transcript.endedAt,
@@ -282,9 +290,11 @@ extension TranscriptStore {
                     start: paragraph.start, end: paragraph.end, text: text,
                     translation: translation?.sourceHash == hash(text) ? translation?.text : nil)
             },
-            names: Dictionary(
-                names.compactMap { name in Speaker(key: name.speaker).map { ($0, name.name) } },
-                uniquingKeysWith: { _, last in last }),
+            speakers: paragraphs.reduce(into: []) { speakers, paragraph in
+                let speaker = Speaker(key: paragraph.speaker) ?? .unknown
+                if !speakers.contains(speaker) { speakers.append(speaker) }
+            },
+            names: names.mapValues(\.name),
             summary: summary.map { TranscriptDocument.Summary(text: $0.text, model: $0.model) })
     }
 
