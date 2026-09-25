@@ -37,13 +37,18 @@ private struct FollowLatest: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scrollPosition($position)
-            .onScrollGeometryChange(for: Geometry.self) { geometry in
-                Geometry(
-                    offset: geometry.contentOffset.y,
-                    belowView: geometry.contentSize.height
-                        - (geometry.contentOffset.y + geometry.containerSize.height))
+            // SwiftUI requests another layout pass whenever this value changes, even when the
+            // action does nothing (ScrollActionDispatcher in AppKit's layout-loop log): a saved
+            // page renamed while open looped through it until AppKit crashed the app. So a page
+            // not listening reports nil, which never changes, and a listening one whole points.
+            .onScrollGeometryChange(for: Geometry?.self) { geometry in
+                guard active else { return nil }
+                return Geometry(
+                    offset: geometry.contentOffset.y.rounded(),
+                    belowView: (geometry.contentSize.height
+                        - (geometry.contentOffset.y + geometry.containerSize.height)).rounded())
             } action: { _, geometry in
-                guard active else { return }
+                guard let geometry else { return }
                 if follow.update(
                     offset: geometry.offset, distanceFromBottom: geometry.belowView,
                     tolerance: lineHeight)
