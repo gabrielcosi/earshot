@@ -132,6 +132,7 @@ final class SessionController {
     private static let refinementTail = 0.3
     @ObservationIgnored var liveInFlight: Set<Channel> = []
     @ObservationIgnored var liveStale: Set<Channel> = []
+    @ObservationIgnored var translationLog = TranslationLog()
     let log = Logger(subsystem: "com.gabrielcosi.earshot", category: "session")
 
     /// The engine answers a commit in about 100 ms; this only bounds a dead socket.

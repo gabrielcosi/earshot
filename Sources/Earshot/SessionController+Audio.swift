@@ -9,6 +9,8 @@ extension SessionController {
     /// turn from its own audio, so every remote paragraph is one speaker's. Refinements still
     /// running are awaited first, so none lands on the rebuilt transcript.
     func relabelSpeakers(from recording: Recording) async {
+        // The session's figures, once its paragraphs are the last ones.
+        defer { translationLog.summarize() }
         recording.finish()
         for refinement in refinements { await refinement.value }
         refinements = []

@@ -11,33 +11,51 @@ extension SessionController {
         where utterance.currentTranslation == nil && attempted[utterance.id] != utterance.text {
             let (id, text) = (utterance.id, utterance.text)
             attempted[id] = text
+            translationLog.inFlight += 1
+            let started = ContinuousClock.now
             Task {
+                var result = TranslationLog.Result.failed
                 do {
                     switch try await translator.translate(text, to: target, pass: .final) {
                     case .translated(let translated):
+                        result = .translated
                         transcript.setTranslation(
                             EarshotKit.Translation(sourceText: text, text: translated), for: id)
                         keepTranslation(
                             translated, of: text, language: target.minimalIdentifier, for: id)
                     case .needsDownload(let source):
+                        result = .unavailable
                         report(
                             .translationNeedsDownload(
                                 from: source.minimalIdentifier, to: target.minimalIdentifier))
                         settle(id, text)
                     case .unsupported(let source):
+                        result = .unavailable
                         report(
                             .translationUnsupported(
                                 from: source.minimalIdentifier, to: target.minimalIdentifier))
                         settle(id, text)
                     case .notNeeded:
+                        result = .kept
                         settle(id, text)
                     }
                 } catch {
                     log.error("translation failed: \(error.localizedDescription)")
                     settle(id, text)
                 }
+                let took = Self.seconds(since: started)
+                translationLog.record(
+                    .init(
+                        kind: .paragraph, strategy: "highFidelity", characters: text.count,
+                        wait: 0, took: took, depth: translationLog.inFlight, result: result,
+                        latency: took))
+                translationLog.inFlight -= 1
             }
         }
+    }
+
+    static func seconds(since start: ContinuousClock.Instant) -> Double {
+        (ContinuousClock.now - start) / .seconds(1)
     }
 
     /// An outcome for text no longer being tried, after a reset or as the paragraph grew, is
@@ -73,13 +91,23 @@ extension SessionController {
         guard let text = transcript.partials[channel], !text.isEmpty else { return }
         let target = Locale.Language(identifier: primaryLanguage)
         liveInFlight.insert(channel)
+        let started = ContinuousClock.now
         Task {
-            if case .translated(let translated) = try? await translator.translate(
-                text, to: target, pass: .live)
-            {
+            var result = TranslationLog.Result.failed
+            switch try? await translator.translate(text, to: target, pass: .live) {
+            case .translated(let translated):
+                result = .translated
                 transcript.setLiveTranslation(
                     EarshotKit.Translation(sourceText: text, text: translated), on: channel)
+            case .notNeeded: result = .kept
+            case .needsDownload, .unsupported: result = .unavailable
+            case nil: break
             }
+            translationLog.record(
+                .init(
+                    kind: .live, strategy: "lowLatency", characters: text.count, wait: 0,
+                    took: Self.seconds(since: started), depth: translationLog.inFlight,
+                    result: result, latency: nil))
             liveInFlight.remove(channel)
             if liveStale.remove(channel) != nil { translateLive(channel) }
         }
