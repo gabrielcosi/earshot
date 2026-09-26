@@ -23,15 +23,14 @@ private struct FollowLatest: ViewModifier {
         _position = State(initialValue: ScrollPosition(edge: startsAtBottom ? .bottom : .top))
     }
 
-    /// The offset, and how far the content runs past the view. Content scrolls under the live
-    /// bar, but SwiftUI's `containerSize` is already the height above it. Measured on a 400 pt
-    /// view: 356 pt with a one-line bar and 336 pt with two, with `contentInsets.bottom` 44 and 64.
-    /// So contentSize − (offset + containerSize) is 0 at the bottom (2720 − (2384 + 336)), and
-    /// adding the inset as well would count the bar twice. A bar that grows shrinks
-    /// `containerSize`, which moves the bottom away and re-scrolls.
+    /// The offset, and the offset at the bottom: the content's height plus its bottom inset, less
+    /// the view's, as in AppKit and UIKit. `containerSize` is the view less both insets, the bar
+    /// under the content and the toolbar over it, so a bottom measured from it sits a toolbar's
+    /// height past the real one, which no scroll reaches. A bar that grows moves the bottom away
+    /// and re-scrolls.
     private struct Geometry: Equatable {
         let offset: Double
-        let belowView: Double
+        let bottom: Double
     }
 
     func body(content: Content) -> some View {
@@ -45,18 +44,18 @@ private struct FollowLatest: ViewModifier {
                 guard active else { return nil }
                 return Geometry(
                     offset: geometry.contentOffset.y.rounded(),
-                    belowView: (geometry.contentSize.height
-                        - (geometry.contentOffset.y + geometry.containerSize.height)).rounded())
+                    bottom: (geometry.contentSize.height + geometry.contentInsets.bottom
+                        - geometry.bounds.height).rounded())
             } action: { _, geometry in
                 guard let geometry else { return }
                 if follow.update(
-                    offset: geometry.offset, distanceFromBottom: geometry.belowView,
+                    offset: geometry.offset, distanceFromBottom: geometry.bottom - geometry.offset,
                     tolerance: lineHeight)
                 {
                     position.scrollTo(edge: .bottom)
                 }
             }
-            .overlay(alignment: .bottomTrailing) {
+            .overlay(alignment: .bottom) {
                 if active, !follow.pinned {
                     // Not animated: an animated scroll crosses lazy rows that are measured on the
                     // way, and their corrections move the offset up as a reader would.
