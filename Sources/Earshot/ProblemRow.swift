@@ -2,13 +2,14 @@ import AppKit
 import EarshotKit
 import SwiftUI
 
-/// One problem in the menu, with the action that fixes or explains it where there is one.
+/// One problem in the menu or the captions overlay, with the action that fixes or explains it
+/// where there is one.
 struct ProblemRow: View {
     let problem: Problem
+    /// The overlay keeps its problems for as long as they explain what it shows.
+    var dismissible = true
     @Environment(SessionController.self) private var controller
     @Environment(Navigation.self) private var navigation
-    @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -26,7 +27,7 @@ struct ProblemRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             // No model is not a report but the state of the library: it goes once a model is
             // chosen, and the button under it sets one up.
-            if problem != .noModel {
+            if dismissible, problem != .noModel {
                 Button("Dismiss", systemImage: "xmark") { controller.problems.dismiss(problem) }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
@@ -46,15 +47,14 @@ struct ProblemRow: View {
     }
 
     private var action: ProblemFix.Action? {
-        ProblemFix(
-            controller: controller, navigation: navigation, openWindow: openWindow,
-            openSettings: openSettings, dismiss: { dismiss() }
-        ).action(for: problem)
+        ProblemFix(controller: controller, navigation: navigation, dismiss: { dismiss() })
+            .action(for: problem)
     }
 }
 
 /// What fixes or explains a problem, for its row in the menu and the window's alert. `dismiss`
-/// closes what shows it, when an action brings up another window.
+/// closes what shows it, when an action brings up another window. Windows open through
+/// `Navigation`, so the actions work from views outside any scene too.
 struct ProblemFix {
     struct Action {
         let title: String
@@ -65,8 +65,6 @@ struct ProblemFix {
 
     let controller: SessionController
     let navigation: Navigation
-    let openWindow: OpenWindowAction
-    let openSettings: OpenSettingsAction
     let dismiss: () -> Void
 
     /// `.noModel` has none: the menu's main button sets up models while none is selected.
@@ -95,14 +93,12 @@ struct ProblemFix {
     private func showGeneralSettings() {
         navigation.settingsTab = .general
         dismiss()
-        openSettings()
-        NSApp.activate()
+        navigation.settingsRequested = true
     }
 
     private func download(from source: String, to target: String) {
         controller.requestDownload(from: source, to: target)
         dismiss()
-        openWindow(id: "main")
-        NSApp.activate()
+        navigation.windowRequested = true
     }
 }

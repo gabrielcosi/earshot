@@ -27,6 +27,21 @@ extension SessionController {
         }
     }
 
+    /// Writes the session's paragraphs to the store; called after every final, so a crash loses
+    /// nothing. The Markdown file is written when the session ends.
+    func persist() {
+        guard !transcript.utterances.isEmpty else { return }
+        do {
+            try store.saveLive(
+                sessionID, startedAt: startedAt, utterances: transcript.utterances,
+                previous: persisted)
+            persisted = transcript.utterances
+            if savedID != sessionID { savedID = sessionID }
+        } catch {
+            reportSavingFailed(error)
+        }
+    }
+
     /// Ends the session in the store, and writes its Markdown file.
     func seal() async {
         guard let savedID else { return }

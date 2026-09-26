@@ -54,6 +54,8 @@ extension SessionController {
     func beginStart() {
         problems.startSession()
         startFailure = nil
+        endedOnItsOwn = false
+        captionsDismissed = false
     }
 
     /// Recorded once: the menu lists it, and the window alerts with it. Set in the same turn as
@@ -62,6 +64,7 @@ extension SessionController {
     func reportStartFailure(_ problem: Problem) {
         problems.report(problem)
         startFailure = problem
+        endedOnItsOwn = true
     }
 
     /// What the menu shows: a missing model while there is none, then what was reported.

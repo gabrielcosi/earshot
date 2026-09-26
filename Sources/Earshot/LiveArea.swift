@@ -35,7 +35,12 @@ struct LiveArea: View {
                     }
                 } else {
                     ForEach(controller.transcript.liveLines) { live in
-                        line(live)
+                        LiveLineRow(
+                            channel: live.channel, live: live, display: display,
+                            textSize: textSize, columnWidth: columnWidth
+                        )
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
                     }
                 }
             }
@@ -85,31 +90,59 @@ struct LiveArea: View {
             }
         }
     }
+}
 
-    private func line(_ live: LiveLine) -> some View {
-        let text = display.text(
-            original: controller.rules.apply(live.text), translation: live.translation)
-        return HStack(alignment: .firstTextBaseline, spacing: 14) {
-            LiveSourceLabel(channel: live.channel)
+/// Words still being recognized on one channel: its source in the speaker column, then the text
+/// after a dashed rule, with word rules applied as they will be to the final. Until there are words
+/// it may show, the source's level says it is heard: "Translating…" while showing translations
+/// alone and the words wait for theirs, "Listening…" before anyone speaks.
+struct LiveLineRow: View {
+    let channel: Channel
+    let live: LiveLine?
+    let display: TranslationDisplay
+    let textSize: Double
+    let columnWidth: Double
+    @Environment(SessionController.self) private var controller
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            LiveSourceLabel(channel: channel)
                 .frame(width: columnWidth, alignment: .leading)
-            LineText(main: text.main, under: text.under, textSize: textSize, pending: true)
-                .overlay(alignment: .leading) {
-                    DashedRule().stroke(
-                        Color(nsColor: LiveSource.colour(live.channel)),
-                        style: StrokeStyle(lineWidth: 2, dash: [3, 3])
-                    )
-                    .frame(width: 2)
-                }
+            words
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    @ViewBuilder private var words: some View {
+        let original = live.map { controller.rules.apply($0.text) } ?? ""
+        if let live,
+            display != .translation
+                || !controller.awaitsTranslation(live: original, translation: live.translation)
+        {
+            let text = display.text(original: original, translation: live.translation)
+            LineText(
+                main: text.main, under: text.under, textSize: textSize,
+                colour: LiveSource.colour(channel), pending: true)
+        } else {
+            HStack(spacing: 8) {
+                if let meter = controller.levels[channel] {
+                    SourceMeter(
+                        meter: meter,
+                        name: LiveSource(channel: channel, sources: controller.sources).name,
+                        colour: Color(nsColor: LiveSource.colour(channel)), showsName: false)
+                }
+                Text(live == nil ? "Listening…" : "Translating…")
+                    .font(.system(size: textSize))
+                    .foregroundStyle(.secondary)
+            }
+            .lineRule(LiveSource.colour(channel), pending: true)
+        }
     }
 }
 
 /// The red dot of a recording, pulsing unless Reduce Motion is on.
-private struct RecordingDot: View {
+struct RecordingDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -121,28 +154,21 @@ private struct RecordingDot: View {
     }
 }
 
-/// A live line's rule: dashed where a card's is solid, as the line is not final yet.
-nonisolated private struct DashedRule: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { path in
-            path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-        }
-    }
-}
-
 /// A source's meter and name. The levels are copied out of the meter once a window, into state
 /// of this view alone, so only the meter redraws.
 private struct SourceMeter: View {
     let meter: LevelMeter
     let name: String
     let colour: Color
+    var showsName = true
     @State private var levels: [Double] = []
 
     var body: some View {
         HStack(spacing: 6) {
             LevelBars(levels: levels, colour: colour)
-            Text(name).foregroundStyle(.secondary).lineLimit(1)
+            if showsName {
+                Text(name).foregroundStyle(.secondary).lineLimit(1)
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name) level")

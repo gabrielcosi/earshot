@@ -40,9 +40,16 @@ struct TranscriptPage: View {
                     SummaryView(summary: summary).padding(.bottom, 12)
                 }
                 ForEach(lines) { line in
-                    TranscriptCard(
-                        line: line, display: display, textSize: textSize,
-                        playback: playback(for: line, playing: playing), columnWidth: columnWidth)
+                    // Showing translations alone, a line waiting for its translation shows once
+                    // it has one.
+                    if !isLive || display != .translation
+                        || !controller.awaitsTranslation(line)
+                    {
+                        TranscriptCard(
+                            line: line, display: display, textSize: textSize,
+                            playback: playback(for: line, playing: playing),
+                            columnWidth: columnWidth)
+                    }
                 }
             }
             .padding(.horizontal, 18)
@@ -200,33 +207,17 @@ struct TranscriptPage: View {
         }
     }
 
-    /// Every label the speaker column shows, laid out unseen, so that the column fits the widest:
-    /// each speaker's name, the latest line's time with its play button, and while listening,
-    /// the live lines' sources. A few views rather than one per line, and all of them, where the
-    /// lazy stack lays out only the lines in sight.
+    /// The speaker column fits every speaker, the latest line's time with its play button, and
+    /// while listening, the live lines' sources; all of them, where the lazy stack lays out only
+    /// the lines in sight.
     private var columnSizer: some View {
-        var named: Set<String> = []
-        let speakers = lines.filter { named.insert($0.speaker).inserted }
-        return ZStack(alignment: .leading) {
-            ForEach(speakers) { line in
-                SpeakerName(name: line.speaker, badge: line.badge, colour: line.voice.colour)
-            }
-            if let latest = lines.max(by: { $0.start < $1.start }) {
-                SpeakerColumn(line: latest, play: player == nil ? nil : {})
-            }
-            if listening {
-                ForEach(Array(controller.levels.keys), id: \.self) { channel in
-                    LiveSourceLabel(channel: channel)
-                }
-            }
-        }
-        .fixedSize()
-        .hidden()
-        .onGeometryChange(for: Double.self) {
-            $0.size.width.rounded(.up)
-        } action: { width in
-            columnWidth = min(width, SpeakerName.maxColumnWidth)
-        }
+        SpeakerColumnSizer(
+            lines: lines,
+            timed: lines.max { $0.start < $1.start }.map {
+                SpeakerColumn(line: $0, play: player == nil ? nil : {})
+            },
+            channels: listening ? Array(controller.levels.keys) : []
+        ) { columnWidth = $0 }
     }
 
     /// Kept audio plays from any line; the session just ended has none to play here.

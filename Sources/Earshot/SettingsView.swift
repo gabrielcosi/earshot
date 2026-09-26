@@ -29,6 +29,7 @@ struct SettingsWindow: View {
 
 struct GeneralSettings: View {
     @Environment(SessionController.self) private var controller
+    @AppStorage(CaptionsSettings.textSize) private var captionSize = CaptionTextSize.medium
 
     /// Low was measured on a real session. Medium and High were measured on the test fixtures,
     /// both sides speaking: 36 and 43 MB an hour, against Low's 27 on the same audio, and 25 and
@@ -143,6 +144,23 @@ struct GeneralSettings: View {
             } footer: {
                 Text(
                     "Transcripts stay in the languages you pick. With one, it is used throughout; with several, each line is checked and redone when it strays. Pick none to allow any language."
+                )
+            }
+
+            Section {
+                Toggle("Show while listening", isOn: $preferences.showsCaptions)
+                Picker("Text Size", selection: $captionSize) {
+                    Text("Small").tag(CaptionTextSize.small)
+                    Text("Medium").tag(CaptionTextSize.medium)
+                    Text("Large").tag(CaptionTextSize.large)
+                }
+                .pickerStyle(.segmented)
+                .disabled(!preferences.showsCaptions)
+            } header: {
+                Text("Captions Overlay")
+            } footer: {
+                Text(
+                    "People see the overlay when you share your whole screen. Share a single window to keep it to yourself."
                 )
             }
 

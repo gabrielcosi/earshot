@@ -23,11 +23,10 @@ struct TranscriptCard: View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
             SpeakerColumn(line: line, play: playback?.play)
                 .frame(width: columnWidth, alignment: .leading)
-            LineText(main: text.main, under: text.under, textSize: textSize)
-                .overlay(alignment: .leading) {
-                    Rectangle().fill(Color(nsColor: line.voice.colour)).frame(width: 2)
-                }
-                .textSelection(.enabled)
+            LineText(
+                main: text.main, under: text.under, textSize: textSize, colour: line.voice.colour
+            )
+            .textSelection(.enabled)
         }
         .padding(10)
         .background {
@@ -80,6 +79,37 @@ struct SpeakerColumn: View {
     }
 }
 
+/// Every label a speaker column shows, laid out unseen, so that the column fits the widest, up to
+/// `SpeakerName.maxColumnWidth`: each speaker's name, `timed`'s time and play button, and the live
+/// lines' sources. A few views rather than one per line.
+struct SpeakerColumnSizer: View {
+    let lines: [TranscriptLine]
+    var timed: SpeakerColumn?
+    let channels: [Channel]
+    let fitted: (Double) -> Void
+
+    var body: some View {
+        var named: Set<String> = []
+        let speakers = lines.filter { named.insert($0.speaker).inserted }
+        return ZStack(alignment: .leading) {
+            ForEach(speakers) { line in
+                SpeakerName(name: line.speaker, badge: line.badge, colour: line.voice.colour)
+            }
+            timed
+            ForEach(channels, id: \.self) { channel in
+                LiveSourceLabel(channel: channel)
+            }
+        }
+        .fixedSize()
+        .hidden()
+        .onGeometryChange(for: Double.self) {
+            $0.size.width.rounded(.up)
+        } action: { width in
+            fitted(min(width, SpeakerName.maxColumnWidth))
+        }
+    }
+}
+
 struct SpeakerName: View {
     let name: String
     let badge: String
@@ -106,10 +136,13 @@ struct SpeakerName: View {
     }
 }
 
+/// A line's text after a rule in its speaker's colour, solid once final and dashed while live, and
+/// the translation under it.
 struct LineText: View {
     let main: String
     let under: String?
     let textSize: Double
+    let colour: NSColor
     var pending = false
 
     var body: some View {
@@ -123,8 +156,36 @@ struct LineText: View {
                     .foregroundStyle(pending ? Color.secondary : Color.translation)
             }
         }
-        .padding(.leading, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .lineRule(colour, pending: pending)
+    }
+}
+
+extension View {
+    /// A line's rule in its speaker's colour on the left, solid once final and dashed while live.
+    func lineRule(_ colour: NSColor, pending: Bool) -> some View {
+        padding(.leading, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .leading) {
+                if pending {
+                    DashedRule()
+                        .stroke(
+                            Color(nsColor: colour), style: StrokeStyle(lineWidth: 2, dash: [3, 3])
+                        )
+                        .frame(width: 2)
+                } else {
+                    Rectangle().fill(Color(nsColor: colour)).frame(width: 2)
+                }
+            }
+    }
+}
+
+/// A live line's rule: dashed where a card's is solid, as the line is not final yet.
+nonisolated private struct DashedRule: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        }
     }
 }
 

@@ -23,18 +23,27 @@ extension SessionController {
                         report(
                             .translationNeedsDownload(
                                 from: source.minimalIdentifier, to: target.minimalIdentifier))
+                        settle(id, text)
                     case .unsupported(let source):
                         report(
                             .translationUnsupported(
                                 from: source.minimalIdentifier, to: target.minimalIdentifier))
+                        settle(id, text)
                     case .notNeeded:
-                        break
+                        settle(id, text)
                     }
                 } catch {
                     log.error("translation failed: \(error.localizedDescription)")
+                    settle(id, text)
                 }
             }
         }
+    }
+
+    /// An outcome for text no longer being tried, after a reset or as the paragraph grew, is
+    /// not recorded.
+    private func settle(_ id: UUID, _ text: String) {
+        if attempted[id] == text { settledTranslations.insert(id) }
     }
 
     /// Stores a translation of what the paragraph says now. One that lands after the session
@@ -76,6 +85,31 @@ extension SessionController {
         }
     }
 
+    /// Whether showing translations alone shows nothing for a finished line yet: its
+    /// translation is still to come.
+    func awaitsTranslation(_ line: TranscriptLine) -> Bool {
+        translationEnabled
+            && TranslationWait.pending(
+                translation: line.translation,
+                settled: UUID(uuidString: line.id).map(settledTranslations.contains) ?? true)
+    }
+
+    /// The same for words still being recognized, which get no recorded outcome: a pair that
+    /// needs a download or is unsupported shows them as they are.
+    func awaitsTranslation(live text: String, translation: String?) -> Bool {
+        let unavailable = problems.all.compactMap { problem -> String? in
+            switch problem {
+            case .translationNeedsDownload(let source, _), .translationUnsupported(let source, _):
+                source
+            default: nil
+            }
+        }
+        return translationEnabled
+            && TranslationWait.pending(
+                live: text, translation: translation, into: primaryLanguage,
+                unavailable: unavailable)
+    }
+
     /// Asks for Apple's download prompt for a language pair; the main window presents it.
     func requestDownload(from source: String, to target: String) {
         downloadRequest = .init(
@@ -105,6 +139,7 @@ extension SessionController {
         }
         endDownload(from: source, to: target)
         attempted = [:]
+        settledTranslations = []
         translatePending()
     }
 

@@ -10,9 +10,9 @@ struct TranscriptCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .toolbar) {
-            mode("Original", .original, key: "1")
-            mode("Original + Translation", .both, key: "2")
-            mode("Translation", .translation, key: "3")
+            mode(.original, key: "1")
+            mode(.both, key: "2")
+            mode(.translation, key: "3")
             Divider()
             Button("Zoom In") { textSize = TranscriptTextSize.larger(than: textSize) }
                 .keyboardShortcut("+")
@@ -30,11 +30,11 @@ struct TranscriptCommands: Commands {
         }
     }
 
-    private func mode(_ title: String, _ mode: TranslationDisplay, key: KeyEquivalent)
-        -> some View
-    {
-        Toggle(title, isOn: Binding(get: { display == mode }, set: { if $0 { display = mode } }))
-            .keyboardShortcut(key)
+    private func mode(_ mode: TranslationDisplay, key: KeyEquivalent) -> some View {
+        Toggle(
+            mode.title, isOn: Binding(get: { display == mode }, set: { if $0 { display = mode } })
+        )
+        .keyboardShortcut(key)
     }
 
     /// ⌘= zooms in too, the unshifted key under "+" on most layouts, as in Safari and Notes. A

@@ -98,6 +98,11 @@ final class Preferences {
         return Summarizer.Endpoint(baseURL: url, model: summaryModel, apiKey: summaryAPIKey)
     }
 
+    /// The captions overlay, over every app while listening. Opt-in: it puts the transcript over
+    /// other apps, where anyone who sees the screen can read it.
+    var showsCaptions: Bool {
+        didSet { UserDefaults.standard.set(showsCaptions, forKey: "showsCaptions") }
+    }
     var keepAwake: Bool {
         didSet { UserDefaults.standard.set(keepAwake, forKey: "keepAwake") }
     }
@@ -149,6 +154,7 @@ final class Preferences {
         summarizeAutomatically = defaults.bool(forKey: "summarizeAutomatically")
         suggestSpeakerNames = defaults.bool(forKey: "suggestSpeakerNames")
         showDockIcon = defaults.object(forKey: "showDockIcon") as? Bool ?? false
+        showsCaptions = defaults.bool(forKey: "showsCaptions")
         let chosen = Self.resolveBookmark()
         if chosen == nil, let bookmark = defaults.data(forKey: "transcriptsBookmark") {
             transcriptsFolderLost = true

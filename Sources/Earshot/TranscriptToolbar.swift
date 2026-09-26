@@ -9,6 +9,17 @@ enum TranscriptSettings {
     static let display = "translationDisplay"
 }
 
+extension TranslationDisplay {
+    /// The same in the toolbar, the View menu, and the captions overlay.
+    var title: String {
+        switch self {
+        case .original: "Original"
+        case .both: "Original + Translation"
+        case .translation: "Translation"
+        }
+    }
+}
+
 /// What can be done with the transcript on screen. The session being recorded is still changing,
 /// so it can be copied and shown, but not yet summarized or named.
 struct TranscriptToolbar: ToolbarContent {
@@ -29,9 +40,9 @@ struct TranscriptToolbar: ToolbarContent {
         if showsTranslation {
             ToolbarItem {
                 Picker("Show", selection: $display) {
-                    Text("Original").tag(TranslationDisplay.original)
-                    Text("Original + Translation").tag(TranslationDisplay.both)
-                    Text("Translation").tag(TranslationDisplay.translation)
+                    ForEach(TranslationDisplay.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .help("Show the original, the translation, or both (⌘1, ⌘2, ⌘3)")

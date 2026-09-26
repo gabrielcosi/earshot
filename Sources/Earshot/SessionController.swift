@@ -19,13 +19,13 @@ final class SessionController {
     /// Every transcript; the Markdown files are copies written from it.
     @ObservationIgnored let store: TranscriptStore
     /// The current session's transcript in the store; nil until its first line is stored.
-    private(set) var savedID: UUID?
+    var savedID: UUID?
     /// The current session's id in the store, from its start.
-    @ObservationIgnored private var sessionID = UUID()
+    @ObservationIgnored var sessionID = UUID()
     /// The current session has ended in the store; what changes after it is exported.
     @ObservationIgnored var sealed = false
     /// What the store holds of the session, so each final writes only what changed.
-    @ObservationIgnored private var persisted: [Utterance] = []
+    @ObservationIgnored var persisted: [Utterance] = []
     /// The session that just ended, kept until its speakers are named so their lines can be
     /// played; deleted then, at the next start, or when the app quits.
     var lastRecording: Recording?
@@ -34,6 +34,14 @@ final class SessionController {
     @ObservationIgnored var awaitingNaming: UUID?
     /// A session ended on its own and the menu has not been opened since.
     var needsAttention = false
+    /// The last session ended on its own or could not start, until the next start: the captions
+    /// overlay stays with the problem meanwhile.
+    var endedOnItsOwn = false
+    /// Utterances the translator settled without a translation: not needed, unavailable, or
+    /// failed. Nothing waits for them; cleared wherever `attempted` is, as they are tried again.
+    var settledTranslations: Set<UUID> = []
+    /// The captions overlay was hidden with ✕, until the next start.
+    var captionsDismissed = false
     /// The app is quitting: the session ends and saves, with nothing after it.
     @ObservationIgnored var quitting = false
     /// Transcripts being summarized right now, and those whose last summary failed.
@@ -68,6 +76,7 @@ final class SessionController {
             UserDefaults.standard.set(primaryLanguage, forKey: "primaryLanguage")
             translator.reset()
             attempted = [:]
+            settledTranslations = []
             problems.resolve(where: \.isTranslation)
             translatePending()
         }
@@ -77,6 +86,7 @@ final class SessionController {
             UserDefaults.standard.set(translationEnabled, forKey: "translationEnabled")
             problems.resolve(where: \.isTranslation)
             attempted = [:]
+            settledTranslations = []
             translatePending()
         }
     }
@@ -165,6 +175,7 @@ final class SessionController {
             guard let models = library.selection else { throw EngineError.missingModel }
             transcript = Transcript()
             attempted = [:]
+            settledTranslations = []
             refinedUntil = [:]
             refinements = []
             names = [:]
@@ -257,7 +268,10 @@ final class SessionController {
     func stop(byUser: Bool = true) async {
         guard isRecording else { return }
         state = .stopping
-        if !byUser { needsAttention = true }
+        if !byUser {
+            needsAttention = true
+            endedOnItsOwn = true
+        }
         microphone?.stop()
         system?.stop()
         echoReference?.stop()
@@ -381,20 +395,5 @@ final class SessionController {
         clients = [:]
         listeners.forEach { $0.cancel() }
         listeners = []
-    }
-
-    /// Writes the session's paragraphs to the store; called after every final, so a crash loses
-    /// nothing. The Markdown file is written when the session ends.
-    func persist() {
-        guard !transcript.utterances.isEmpty else { return }
-        do {
-            try store.saveLive(
-                sessionID, startedAt: startedAt, utterances: transcript.utterances,
-                previous: persisted)
-            persisted = transcript.utterances
-            if savedID != sessionID { savedID = sessionID }
-        } catch {
-            reportSavingFailed(error)
-        }
     }
 }

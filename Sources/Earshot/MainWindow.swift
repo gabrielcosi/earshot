@@ -23,9 +23,12 @@ final class Navigation {
 
     var selection: Item?
     var settingsTab = SettingsTab.general
-    /// Set when Earshot is opened again while it runs with no window; the menu bar label opens
-    /// the main window, since the app delegate cannot.
+    /// Set when Earshot is opened again while it runs with no window, or by a view outside any
+    /// scene, such as the captions overlay; the menu bar label opens the main window, since
+    /// neither can.
     var windowRequested = false
+    /// The same for Settings, at `settingsTab`.
+    var settingsRequested = false
     /// A stored transcript to open with the speakers panel: set when a session stops.
     var naming: UUID?
     /// The speakers panel beside the transcript, opened and closed by Name Speakers.
@@ -47,8 +50,6 @@ struct MainWindow: View {
     @Environment(Navigation.self) private var navigation
     @Environment(SessionController.self) private var controller
     @Environment(\.undoManager) private var undoManager
-    @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
     @State private var saved = SavedTranscripts()
     /// The transcript last selected, selected again when the window opens. App storage, not
     /// scene storage: SwiftUI destroys a scene's stored state when its window is closed on macOS,
@@ -115,9 +116,7 @@ struct MainWindow: View {
                 set: { if !$0 { controller.startFailure = nil } }),
             presenting: controller.startFailure
         ) { problem in
-            let fix = ProblemFix(
-                controller: controller, navigation: navigation, openWindow: openWindow,
-                openSettings: openSettings, dismiss: {})
+            let fix = ProblemFix(controller: controller, navigation: navigation, dismiss: {})
             // The first button is the default: a fix when there is one, else OK.
             if let action = fix.action(for: problem), action.fixes {
                 Button(action.title, action: action.run)

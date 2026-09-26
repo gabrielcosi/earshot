@@ -53,14 +53,32 @@ public struct TranscriptLine: Identifiable, Sendable, Equatable {
         in transcript: Transcript, names: [Speaker: String] = [:], rules: WordRules? = nil
     ) -> [TranscriptLine] {
         var voices = Voices()
-        return transcript.utterances.map { utterance in
-            TranscriptLine(
-                id: utterance.id.uuidString,
-                speaker: names[utterance.speaker] ?? utterance.speaker.label,
-                voice: voices.voice(for: utterance.speaker),
-                start: utterance.start, text: rules?.apply(utterance.text) ?? utterance.text,
-                translation: utterance.translation?.text)
-        }
+        return transcript.utterances.map { line($0, voices: &voices, names: names, rules: rules) }
+    }
+
+    /// The session's last `count` lines, as `lines(in:names:rules:)` gives them, for the captions
+    /// overlay; the rules apply to those lines alone.
+    public static func latest(
+        _ count: Int, in transcript: Transcript, names: [Speaker: String] = [:],
+        rules: WordRules? = nil
+    ) -> [TranscriptLine] {
+        let utterances = transcript.utterances
+        let first = max(utterances.count - count, 0)
+        var voices = Voices()
+        // Numbered in order of first appearance, so every earlier speaker counts.
+        for utterance in utterances[..<first] { _ = voices.voice(for: utterance.speaker) }
+        return utterances[first...].map { line($0, voices: &voices, names: names, rules: rules) }
+    }
+
+    private static func line(
+        _ utterance: Utterance, voices: inout Voices, names: [Speaker: String], rules: WordRules?
+    ) -> TranscriptLine {
+        TranscriptLine(
+            id: utterance.id.uuidString,
+            speaker: names[utterance.speaker] ?? utterance.speaker.label,
+            voice: voices.voice(for: utterance.speaker),
+            start: utterance.start, text: rules?.apply(utterance.text) ?? utterance.text,
+            translation: utterance.translation?.text)
     }
 
     /// The microphone and speech with no speaker have colours of their own; the other speakers

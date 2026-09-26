@@ -13,7 +13,7 @@ struct EarshotApp: App {
                 .environment(delegate.controller)
                 .environment(delegate.navigation)
         } label: {
-            MenuBarLabel()
+            MenuBarLabel(captions: delegate.captions)
                 .environment(delegate.controller)
                 .environment(delegate.navigation)
         }
@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let controller = SessionController()
     let navigation = Navigation()
     let updater = Updater()
+    let captions = Captions()
 
     /// A second copy would delete the recordings of the first one's session as it launched.
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -102,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// The menu bar icon. It exists from launch, so it also opens Settings when no model is
 /// downloaded yet.
 struct MenuBarLabel: View {
+    let captions: Captions
     @Environment(SessionController.self) private var controller
     @Environment(Navigation.self) private var navigation
     @Environment(\.openWindow) private var openWindow
@@ -125,6 +127,12 @@ struct MenuBarLabel: View {
             openWindow(id: "main")
             NSApp.activate()
         }
+        .onChange(of: navigation.settingsRequested) {
+            guard navigation.settingsRequested else { return }
+            navigation.settingsRequested = false
+            openSettings()
+            NSApp.activate()
+        }
         // A session that stops leaves the sidebar's top row; its stored transcript takes the
         // selection, in its day, or nothing when nothing was said. Here, as the window may be
         // closed; the window shows the stored transcript meanwhile (`MainWindow.shown`).
@@ -142,6 +150,29 @@ struct MenuBarLabel: View {
             openWindow(id: "main")
             NSApp.activate()
         }
+        .onChange(of: showsCaptions, initial: true) {
+            if showsCaptions {
+                captions.show(
+                    CaptionsOverlay()
+                        .environment(controller)
+                        .environment(navigation))
+            } else {
+                captions.hide()
+            }
+        }
+        // ✕ lasts until the next start (`beginStart`), or until the setting is turned on again.
+        .onChange(of: controller.preferences.showsCaptions) {
+            controller.captionsDismissed = false
+        }
+    }
+
+    /// While listening, and after a session that ended on its own, with why, until ✕, the next
+    /// start, or its problems are dismissed.
+    private var showsCaptions: Bool {
+        controller.preferences.showsCaptions && !controller.captionsDismissed
+            && (controller.state != .idle
+                || controller.endedOnItsOwn
+                    && controller.problems.all.contains(where: \.endsWithSession))
     }
 }
 
@@ -233,6 +264,9 @@ struct MenuContent: View {
             LabeledContent("Listening to") { SourcesMenu().fixedSize() }
             LabeledContent("Spoken") { SpokenLanguagesMenu().fixedSize() }
             LabeledContent("Translate into") { TranslationMenu().fixedSize() }
+            Toggle(isOn: $preferences.showsCaptions) {
+                Label("Captions Overlay", systemImage: "captions.bubble")
+            }
 
             Divider()
             HStack {

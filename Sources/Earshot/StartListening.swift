@@ -4,12 +4,16 @@ import SwiftUI
 /// Starts a session from wherever it is asked for: the menu bar, the sidebar's first row, or
 /// File > Start Listening. With no model chosen yet, Settings opens on Models instead. Otherwise
 /// the window opens on the live session and listening starts; what goes wrong is reported to
-/// the menu's problems.
+/// the menu's problems. With the captions overlay on, the overlay is where the session shows: a
+/// start from the menu bar opens no window, and one from the window closes it, so the call behind
+/// it comes forward.
 struct StartListening {
     let controller: SessionController
     let navigation: Navigation
     let openWindow: OpenWindowAction
     let openSettings: OpenSettingsAction
+    /// Set when started from the window, to close it.
+    var dismissWindow: DismissWindowAction?
 
     /// Nothing is started while a session is starting, running, or stopping.
     var isPossible: Bool { controller.state == .idle }
@@ -23,12 +27,25 @@ struct StartListening {
     func callAsFunction() async {
         guard isPossible else { return }
         guard controller.library.selection != nil else { return setUpModels() }
+        let captions = controller.preferences.showsCaptions
         navigation.selection = .live
-        openWindow(id: "main")
-        NSApp.activate()
+        if !captions {
+            openWindow(id: "main")
+            NSApp.activate()
+        }
         await controller.start()
-        // A start that failed leaves nothing to show; the window goes back to where it was.
-        if controller.state == .idle { navigation.selection = nil }
+        // A start that failed leaves nothing to show; the window goes back to where it was, and
+        // stays in front with its alert.
+        if controller.state == .idle {
+            navigation.selection = nil
+        } else if captions, let dismissWindow {
+            // Capture has started. A failure from here on, such as the engine not loading, ends
+            // the session on its own, and the overlay says why. Hiding alone would not last:
+            // opening the menu bar's window activates Earshot, which unhides its windows, so the
+            // window is closed; hiding then hands the call its activation back.
+            dismissWindow(id: "main")
+            NSApp.hide(nil)
+        }
     }
 }
 
@@ -42,6 +59,7 @@ struct StartListeningCommands: Commands {
     let navigation: Navigation
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -51,7 +69,7 @@ struct StartListeningCommands: Commands {
             } else {
                 let start = StartListening(
                     controller: controller, navigation: navigation, openWindow: openWindow,
-                    openSettings: openSettings)
+                    openSettings: openSettings, dismissWindow: dismissWindow)
                 Button("Start Listening") { Task { await start() } }
                     .keyboardShortcut("n")
                     .disabled(!start.isPossible)
@@ -68,11 +86,12 @@ struct StartListeningRow: View {
     @Environment(Navigation.self) private var navigation
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
         let start = StartListening(
             controller: controller, navigation: navigation, openWindow: openWindow,
-            openSettings: openSettings)
+            openSettings: openSettings, dismissWindow: dismissWindow)
         Button {
             Task { await start() }
         } label: {
