@@ -1,6 +1,6 @@
 # ADR-0003 — Translate finished utterances with Apple's Translation framework
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0012](0012-translate-each-sentence-once.md)
 - **Date:** 2026-09-24
 - **Deciders:** gabrielcosi
 - **Builds on:** [ADR-0001](0001-nemo-speech-as-local-engine.md)
