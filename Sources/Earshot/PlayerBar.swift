@@ -53,18 +53,21 @@ struct WaveformView: View {
             let bars =
                 player.peaks.isEmpty
                 ? Array(repeating: 0, count: count) : Waveform.bars(player.peaks, count: count)
-            let played = Playback.fraction(of: position, in: player.duration) * size.width
+            var path = Path()
             for index in 0..<bars.count {
-                let level = CGFloat(bars[index])
-                let barHeight = max(Self.barWidth, level * size.height)
-                let x = Double(index) * Self.barPitch
-                let bar = Path(
-                    roundedRect: CGRect(
-                        x: x, y: (size.height - barHeight) / 2, width: Self.barWidth,
-                        height: barHeight),
-                    cornerRadius: Self.barWidth / 2)
-                context.fill(bar, with: x < played ? .style(.tint) : .style(.tertiary))
+                let barHeight = max(Self.barWidth, CGFloat(bars[index]) * size.height)
+                path.addRoundedRect(
+                    in: CGRect(
+                        x: Double(index) * Self.barPitch, y: (size.height - barHeight) / 2,
+                        width: Self.barWidth, height: barHeight),
+                    cornerSize: CGSize(width: Self.barWidth / 2, height: Self.barWidth / 2))
             }
+            context.fill(path, with: .style(.tertiary))
+            // Coloured up to the exact point, through the bar it is in. A bar at a time, the played
+            // part of two minutes in a 1,000-point waveform moved on under three times a second.
+            let played = Playback.fraction(of: position, in: player.duration) * size.width
+            context.clip(to: Path(CGRect(x: 0, y: 0, width: played, height: size.height)))
+            context.fill(path, with: .style(.tint))
         }
         .frame(height: Self.height)
         .contentShape(.rect)
