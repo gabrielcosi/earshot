@@ -28,7 +28,7 @@ Earshot checks for signed updates automatically. Use **Check for Updates…** in
 
 ## Use
 
-Click the ear in the menu bar and choose **Start listening**. The transcript window opens and fills in as people speak: each finished line becomes a card, and the words still being recognized wait in a bar at the bottom. Choose **Stop** when you're done: Earshot tidies the speaker boundaries and opens the speakers beside the transcript, with a few of their lines to read and play, to name them. Return saves a name, ⌘Z undoes it, and **Done** closes the panel; **Name Speakers** in the toolbar opens it again.
+Click the ear in the menu bar and choose **Start Listening**, or, with the Earshot window open, click **Start Listening** at the top of the sidebar or press ⌘N. The transcript window opens and fills in as people speak: each finished line becomes a card, and the words still being recognized wait at the bottom, under the time, a level meter for you and for what the Mac plays, and **Stop**. Choose **Stop** there or in the menu when you're done: Earshot tidies the speaker boundaries and opens the speakers beside the transcript, with a few of their lines to read and play, to name them. Return saves a name, ⌘Z undoes it, and **Done** closes the panel; **Name Speakers** in the toolbar opens it again.
 
 The window lists your transcripts by day, with the session in progress on top. Press ⌘+ and ⌘− to change the text size, and use the switch in the toolbar to show the original, the translation, or both. Everything else is in **Settings** (⌘,).
 

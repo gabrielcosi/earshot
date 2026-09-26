@@ -50,6 +50,20 @@ extension SessionController {
         }
     }
 
+    /// A start clears the last session's problems and its own failure.
+    func beginStart() {
+        problems.startSession()
+        startFailure = nil
+    }
+
+    /// Recorded once: the menu lists it, and the window alerts with it. Set in the same turn as
+    /// the failure, since a start without the microphone fails without ever awaiting and SwiftUI
+    /// sees no change of state to react to.
+    func reportStartFailure(_ problem: Problem) {
+        problems.report(problem)
+        startFailure = problem
+    }
+
     /// What the menu shows: a missing model while there is none, then what was reported.
     var shownProblems: [Problem] {
         (library.selection == nil ? [.noModel] : []) + problems.all

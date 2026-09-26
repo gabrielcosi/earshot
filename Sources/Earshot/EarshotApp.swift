@@ -29,6 +29,7 @@ struct EarshotApp: App {
             TranscriptCommands(updater: delegate.updater)
             PlaybackCommands()
             ExportCommands(controller: delegate.controller)
+            StartListeningCommands(controller: delegate.controller, navigation: delegate.navigation)
         }
 
         Settings {
@@ -124,6 +125,13 @@ struct MenuBarLabel: View {
             openWindow(id: "main")
             NSApp.activate()
         }
+        // A session that stops leaves the sidebar's top row; its stored transcript takes the
+        // selection, in its day, or nothing when nothing was said. Here, as the window may be
+        // closed; the window shows the stored transcript meanwhile (`MainWindow.shown`).
+        .onChange(of: controller.state) {
+            guard controller.state == .idle, navigation.selection == .live else { return }
+            navigation.selection = controller.savedID.map(Navigation.Item.saved)
+        }
         // The label lives as long as the app, so a session that ends while the menu is closed
         // still gets its speakers panel, the next time the window opens.
         .onChange(of: controller.namingRequest) {
@@ -192,10 +200,8 @@ struct MenuContent: View {
             }
             if controller.library.selection == nil, !controller.isRecording {
                 Button {
-                    navigation.settingsTab = .models
                     dismiss()
-                    openSettings()
-                    NSApp.activate()
+                    start.setUpModels()
                 } label: {
                     Label("Set Up Models…", systemImage: "arrow.down.circle")
                         .frame(maxWidth: .infinity)
@@ -205,7 +211,7 @@ struct MenuContent: View {
             } else {
                 Button(action: toggle) {
                     Label(
-                        controller.isRecording ? "Stop" : "Start listening",
+                        controller.isRecording ? "Stop" : "Start Listening",
                         systemImage: controller.isRecording ? "stop.fill" : "record.circle"
                     )
                     .frame(maxWidth: .infinity)
@@ -256,11 +262,17 @@ struct MenuContent: View {
                     .foregroundStyle(.red)
                 if controller.engineLoading {
                     ProgressView().controlSize(.small)
-                    Text("Loading models, the transcript will catch up")
+                    Text(LiveArea.loadingMessage)
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
+    }
+
+    private var start: StartListening {
+        StartListening(
+            controller: controller, navigation: navigation, openWindow: openWindow,
+            openSettings: openSettings)
     }
 
     private func toggle() {
@@ -269,9 +281,8 @@ struct MenuContent: View {
                 await controller.stop()
                 return
             }
-            navigation.selection = .live
-            showWindow()
-            await controller.start()
+            dismiss()
+            await start()
         }
     }
 

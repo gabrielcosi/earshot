@@ -15,27 +15,14 @@ struct TranscriptCard: View {
     let display: TranslationDisplay
     let textSize: Double
     let playback: Playback?
+    /// Wide enough for the transcript's widest label, as the page measures it.
+    let columnWidth: Double
 
     var body: some View {
         let text = display.text(original: line.text, translation: line.translation)
         HStack(alignment: .firstTextBaseline, spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                SpeakerName(name: line.speaker, badge: line.badge, colour: line.voice.colour)
-                HStack(spacing: 4) {
-                    Text(MarkdownExport.timestamp(line.start))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    if let playback {
-                        Button("Play from Here", systemImage: "play.fill", action: playback.play)
-                            .labelStyle(.iconOnly)
-                            .help("Play from here")
-                            .buttonStyle(.borderless)
-                            .controlSize(.small)
-                    }
-                }
-                .padding(.leading, SpeakerName.indent)
-            }
-            .frame(width: SpeakerName.columnWidth, alignment: .leading)
+            SpeakerColumn(line: line, play: playback?.play)
+                .frame(width: columnWidth, alignment: .leading)
             LineText(main: text.main, under: text.under, textSize: textSize)
                 .overlay(alignment: .leading) {
                     Rectangle().fill(Color(nsColor: line.voice.colour)).frame(width: 2)
@@ -62,66 +49,34 @@ struct TranscriptCard: View {
     }
 
     /// "1 minute, 5 seconds" rather than "01:05", which VoiceOver reads as a clock time.
-    private static func spoken(_ seconds: Double) -> String {
+    static func spoken(_ seconds: Double) -> String {
         Duration.seconds(Int(seconds)).formatted(
             .units(allowed: [.hours, .minutes, .seconds], width: .wide))
     }
 }
 
-/// The words still being recognized on each channel that is speaking, pinned under the transcript
-/// until their final arrives and they become a card.
-struct LiveBars: View {
-    let display: TranslationDisplay
-    let textSize: Double
-    @Environment(SessionController.self) private var controller
+/// Who said a line and when, with a button to play from there when the audio was kept.
+struct SpeakerColumn: View {
+    let line: TranscriptLine
+    let play: (() -> Void)?
 
     var body: some View {
-        if controller.engineLoading || !controller.transcript.liveLines.isEmpty {
-            bars
-        }
-    }
-
-    private var bars: some View {
-        VStack(spacing: 6) {
-            if controller.engineLoading {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading models, the transcript will catch up")
-                        .foregroundStyle(.secondary)
-                    Spacer()
+        VStack(alignment: .leading, spacing: 3) {
+            SpeakerName(name: line.speaker, badge: line.badge, colour: line.voice.colour)
+            HStack(spacing: 4) {
+                Text(MarkdownExport.timestamp(line.start))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                if let play {
+                    Button("Play from Here", systemImage: "play.fill", action: play)
+                        .labelStyle(.iconOnly)
+                        .help("Play from here")
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
                 }
-                .padding(12)
-                .background(.bar, in: .rect(cornerRadius: 10))
             }
-            ForEach(controller.transcript.liveLines) { live in
-                bar(live)
-            }
+            .padding(.leading, SpeakerName.indent)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-    }
-
-    private func bar(_ live: LiveLine) -> some View {
-        let text = display.text(
-            original: controller.rules.apply(live.text), translation: live.translation)
-        let me = live.channel == .microphone
-        return HStack(alignment: .firstTextBaseline, spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                SpeakerName(
-                    name: me ? "Me" : "Live", badge: me ? "M" : "…",
-                    colour: (me ? TranscriptLine.Voice.me : .unknown).colour)
-                Text("now").font(.caption).foregroundStyle(.secondary)
-                    .padding(.leading, SpeakerName.indent)
-            }
-            .frame(width: SpeakerName.columnWidth, alignment: .leading)
-            LineText(main: text.main, under: text.under, textSize: textSize, pending: true)
-                .overlay(alignment: .leading) { Rectangle().fill(.tertiary).frame(width: 2) }
-        }
-        .padding(12)
-        .background(.bar, in: .rect(cornerRadius: 10))
-        .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(.separator) }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.updatesFrequently)
     }
 }
 
@@ -130,8 +85,9 @@ struct SpeakerName: View {
     let badge: String
     let colour: NSColor
 
-    /// The mockup's left column, wide enough for "Speaker 10" beside its badge.
-    static let columnWidth = 128.0
+    /// The widest the speaker column gets, from the design: "Speaker 10" beside its badge fits,
+    /// and a longer name is cut short.
+    static let maxColumnWidth = 128.0
     static let badgeSide = 18.0
     static let spacing = 7.0
     /// Lines the time up with the name, past the badge.
@@ -150,7 +106,7 @@ struct SpeakerName: View {
     }
 }
 
-private struct LineText: View {
+struct LineText: View {
     let main: String
     let under: String?
     let textSize: Double
@@ -164,7 +120,7 @@ private struct LineText: View {
             if let under {
                 Text(under)
                     .font(.system(size: textSize * 0.9))
-                    .foregroundStyle(Color.translation)
+                    .foregroundStyle(pending ? Color.secondary : Color.translation)
             }
         }
         .padding(.leading, 14)

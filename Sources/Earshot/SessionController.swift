@@ -52,6 +52,8 @@ final class SessionController {
     var names: [Speaker: String] = [:]
     /// What keeps Earshot from working right now, shown in the menu.
     var problems = Problems()
+    /// What stopped the latest start, for the window's alert until it is dismissed.
+    var startFailure: Problem?
     /// Applied wherever text is shown or written; a change reaches each file at its next export.
     var rules: WordRules {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(rules), forKey: "wordRules") }
@@ -100,6 +102,7 @@ final class SessionController {
     var sources: [AudioSource] = [] {
         didSet { system?.listen(to: Set(sources.map(\.id))) }
     }
+    private(set) var levels: [Channel: LevelMeter] = [:]
     @ObservationIgnored private var clients: [Channel: RealtimeClient] = [:]
     @ObservationIgnored private var listeners: [Task<Void, Never>] = []
     private(set) var startedAt = Date.now
@@ -147,7 +150,9 @@ final class SessionController {
     func start() async {
         guard state == .idle else { return }
         state = .starting
-        problems.startSession()
+        // Before anything can fail: a start that fails has no transcript, not the last one's.
+        savedID = nil
+        beginStart()
         unload?.cancel()
         finishNaming()
         do {
@@ -163,7 +168,6 @@ final class SessionController {
             refinedUntil = [:]
             refinements = []
             names = [:]
-            savedID = nil
             sessionID = UUID()
             sealed = false
             persisted = []
@@ -182,7 +186,7 @@ final class SessionController {
             }
         } catch {
             log.error("start failed: \(error.localizedDescription)")
-            if let problem = Self.problem(startingWith: error) { problems.report(problem) }
+            if let problem = Self.problem(startingWith: error) { reportStartFailure(problem) }
             teardown()
             state = .idle
         }
@@ -200,6 +204,8 @@ final class SessionController {
             keeping: preferences.keepAudio ? preferences.keepAudioQuality : nil,
             echoCancelled: canceller != nil)
         self.recordings = recordings
+        levels = [.system: systemSink.level, .microphone: microphoneSink?.level].compactMapValues(
+            \.self)
         if let microphoneSink, let microphoneRecording = recordings.microphone {
             let microphone = MicrophoneCapture()
             try microphone.start(
@@ -229,10 +235,6 @@ final class SessionController {
         return (systemSink, microphoneSink)
     }
 
-    private static func output(_ recording: Recording?) -> KeptOutput? {
-        recording.map { recording in KeptOutput(rate: recording.rate, onAudio: recording.append) }
-    }
-
     private func connect(models: EngineServer.Models, system: AudioSink, microphone: AudioSink?)
         async
     {
@@ -243,7 +245,7 @@ final class SessionController {
             microphone?.attach(connect(.microphone, diarize: false, to: endpoint))
         } catch {
             log.error("engine start failed: \(error.localizedDescription)")
-            problems.report(Self.problem(startingEngine: error))
+            reportStartFailure(Self.problem(startingEngine: error))
             teardown()
             state = .idle
         }
@@ -364,6 +366,7 @@ final class SessionController {
     }
 
     private func teardown() {
+        levels = [:]
         recordings?.discard()
         recordings = nil
         if let awake { ProcessInfo.processInfo.endActivity(awake) }

@@ -31,6 +31,11 @@ extension SessionController {
         }
     }
 
+    /// Where a capture sends the audio kept of it, when it is kept.
+    static func output(_ recording: Recording?) -> KeptOutput? {
+        recording.map { recording in KeptOutput(rate: recording.rate, onAudio: recording.append) }
+    }
+
     func clip(at start: Double, seconds: Double) -> Data? {
         lastRecording?.clip(from: start, seconds: seconds)
     }

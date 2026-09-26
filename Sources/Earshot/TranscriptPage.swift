@@ -15,6 +15,8 @@ struct TranscriptPage: View {
     @State private var unreadable = false
     /// The stored transcript's kept audio, when there is some.
     @State private var player: TranscriptPlayer?
+    /// Fits the widest label in the speaker column, up to `SpeakerName.maxColumnWidth`.
+    @State private var columnWidth = SpeakerName.maxColumnWidth
 
     private var isLive: Bool { item == .live }
 
@@ -40,12 +42,13 @@ struct TranscriptPage: View {
                 ForEach(lines) { line in
                     TranscriptCard(
                         line: line, display: display, textSize: textSize,
-                        playback: playback(for: line, playing: playing))
+                        playback: playback(for: line, playing: playing), columnWidth: columnWidth)
                 }
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
         }
+        .background { columnSizer }
         .defaultScrollAnchor(isLive ? .bottom : .top, for: .initialOffset)
         .followsLatest(listening, startsAtBottom: isLive, lineHeight: textSize)
         // The failure is about the whole transcript and comes first; the player sits right above
@@ -59,7 +62,9 @@ struct TranscriptPage: View {
         }
         .safeAreaBar(edge: .bottom, spacing: 0) {
             if listening {
-                LiveBars(display: showsTranslation ? display : .original, textSize: textSize)
+                LiveArea(
+                    display: showsTranslation ? display : .original, textSize: textSize,
+                    columnWidth: columnWidth)
             }
         }
         .overlay { emptyState }
@@ -135,7 +140,7 @@ struct TranscriptPage: View {
     /// The user's title, else the time: the date is in the subtitle.
     private var title: String {
         switch item {
-        case .live: listening ? "Listening now" : "Last session"
+        case .live: listening ? "Listening now" : "Finishing…"
         case .saved:
             stored.map { $0.title ?? $0.startedAt.formatted(date: .omitted, time: .shortened) }
                 ?? ""
@@ -192,6 +197,35 @@ struct TranscriptPage: View {
                 description: Text("Each line appears here once its speaker finishes it."))
         } else if lines.isEmpty, stored != nil || isLive {
             ContentUnavailableView("Nothing transcribed", systemImage: "waveform")
+        }
+    }
+
+    /// Every label the speaker column shows, laid out unseen, so that the column fits the widest:
+    /// each speaker's name, the latest line's time with its play button, and while listening,
+    /// the live lines' sources. A few views rather than one per line, and all of them, where the
+    /// lazy stack lays out only the lines in sight.
+    private var columnSizer: some View {
+        var named: Set<String> = []
+        let speakers = lines.filter { named.insert($0.speaker).inserted }
+        return ZStack(alignment: .leading) {
+            ForEach(speakers) { line in
+                SpeakerName(name: line.speaker, badge: line.badge, colour: line.voice.colour)
+            }
+            if let latest = lines.max(by: { $0.start < $1.start }) {
+                SpeakerColumn(line: latest, play: player == nil ? nil : {})
+            }
+            if listening {
+                ForEach(Array(controller.levels.keys), id: \.self) { channel in
+                    LiveSourceLabel(channel: channel)
+                }
+            }
+        }
+        .fixedSize()
+        .hidden()
+        .onGeometryChange(for: Double.self) {
+            $0.size.width.rounded(.up)
+        } action: { width in
+            columnWidth = min(width, SpeakerName.maxColumnWidth)
         }
     }
 

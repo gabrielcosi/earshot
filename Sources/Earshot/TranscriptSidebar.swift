@@ -1,12 +1,16 @@
 import EarshotKit
 import SwiftUI
 
-/// The live session on top, then the saved transcripts by day, and the way to Settings.
+/// Start Listening or the live session on top, then the saved transcripts by day, and the way to
+/// Settings.
 struct TranscriptSidebar: View {
     let saved: SavedTranscripts
     @Environment(SessionController.self) private var controller
     @Environment(Navigation.self) private var navigation
     @FocusedValue(\.transcriptPlayer) private var player
+    /// The list, not Start Listening above it, takes focus when the window opens: with keyboard
+    /// navigation on, the button would otherwise, and Space there would start a recording.
+    @FocusState private var listFocused: Bool
 
     var body: some View {
         @Bindable var navigation = navigation
@@ -22,12 +26,23 @@ struct TranscriptSidebar: View {
                 }
             }
         }
+        .focused($listFocused)
         // The focused list takes Space before the Controls menu sees it (seen on screen), so it
         // plays and pauses here. Handled even with no player, so Space in the list never beeps.
         .onKeyPress(.space) {
             player?.toggle()
             return .handled
         }
+        // Outside the list: a row there draws a prominent button through the sidebar's vibrancy,
+        // a washed-out pink (#FFB0AE sampled) instead of Stop's red.
+        .safeAreaBar(edge: .top) {
+            if !controller.hasLiveSession {
+                StartListeningRow()
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+            }
+        }
+        .defaultFocus($listFocused, true)
         .safeAreaBar(edge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
                 if let progress = controller.importProgress {
@@ -89,12 +104,9 @@ private struct LiveItem: View {
             case .starting:
                 Image(systemName: "circle.fill").foregroundStyle(.red).imageScale(.small)
                 Text("Listening now")
-            case .stopping:
+            case .stopping, .idle:
                 Image(systemName: "waveform")
                 Text("Finishing…")
-            case .idle:
-                Image(systemName: "waveform")
-                Text("Last session")
             }
         }
         .accessibilityElement(children: .combine)

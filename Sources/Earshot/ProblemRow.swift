@@ -45,17 +45,43 @@ struct ProblemRow: View {
         }
     }
 
-    /// `.noModel` has none here: the menu's main button sets up models while none is selected.
-    private var action: (title: String, run: () -> Void)? {
+    private var action: ProblemFix.Action? {
+        ProblemFix(
+            controller: controller, navigation: navigation, openWindow: openWindow,
+            openSettings: openSettings, dismiss: { dismiss() }
+        ).action(for: problem)
+    }
+}
+
+/// What fixes or explains a problem, for its row in the menu and the window's alert. `dismiss`
+/// closes what shows it, when an action brings up another window.
+struct ProblemFix {
+    struct Action {
+        let title: String
+        let run: () -> Void
+        /// It fixes the problem, rather than showing where to look: the alert's default button.
+        var fixes = true
+    }
+
+    let controller: SessionController
+    let navigation: Navigation
+    let openWindow: OpenWindowAction
+    let openSettings: OpenSettingsAction
+    let dismiss: () -> Void
+
+    /// `.noModel` has none: the menu's main button sets up models while none is selected.
+    func action(for problem: Problem) -> Action? {
         switch problem {
         case .microphoneDenied:
-            ("Open System Settings", openMicrophoneSettings)
+            Action(title: "Open System Settings", run: openMicrophoneSettings)
         case .engineFailed, .engineStopped, .engineError, .connectionLost:
-            ("Show Log", { NSWorkspace.shared.open(EngineServer.logURL) })
+            Action(
+                title: "Show Log", run: { NSWorkspace.shared.open(EngineServer.logURL) },
+                fixes: false)
         case .translationNeedsDownload(let source, let target):
-            ("Download…", { download(from: source, to: target) })
+            Action(title: "Download…", run: { download(from: source, to: target) })
         case .transcriptsFolderUnavailable:
-            ("Open Settings…", showGeneralSettings)
+            Action(title: "Open Settings…", run: showGeneralSettings)
         default:
             nil
         }

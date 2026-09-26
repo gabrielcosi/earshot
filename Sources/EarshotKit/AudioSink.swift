@@ -18,10 +18,13 @@ public final class AudioSink: Sendable {
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
+    /// How loud the audio sent is, for the capture's meter.
+    public let level = LevelMeter()
 
     public init() {}
 
     public func send(_ pcm: Data) {
+        level.add(pcm)
         state.withLock { state in
             if let client = state.client {
                 client.send(audio: pcm)

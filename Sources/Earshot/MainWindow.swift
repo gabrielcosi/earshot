@@ -1,3 +1,4 @@
+import EarshotKit
 import SwiftUI
 @preconcurrency import Translation
 
@@ -5,7 +6,7 @@ import SwiftUI
 @Observable
 final class Navigation {
     enum Item: Hashable {
-        /// The session in memory: being recorded, or the last one.
+        /// The session being started, recorded, or stopped.
         case live
         /// A transcript in the store.
         case saved(UUID)
@@ -46,6 +47,8 @@ struct MainWindow: View {
     @Environment(Navigation.self) private var navigation
     @Environment(SessionController.self) private var controller
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @State private var saved = SavedTranscripts()
     /// The transcript last selected, selected again when the window opens. App storage, not
     /// scene storage: SwiftUI destroys a scene's stored state when its window is closed on macOS,
@@ -97,17 +100,46 @@ struct MainWindow: View {
             if case .saved(let transcript) = navigation.selection {
                 lastTranscript = transcript.uuidString
             }
+            // A start that failed, or a session with nothing said, leaves nothing selected: back
+            // to the transcript the reader was on.
+            restoreSelection()
         }
         .onChange(of: saved.entries.map(\.id)) { restoreSelection() }
         .onChange(of: controller.state) {
             if controller.isRecording { navigation.selection = .live }
         }
+        .alert(
+            "Earshot could not start listening",
+            isPresented: Binding(
+                get: { controller.startFailure != nil },
+                set: { if !$0 { controller.startFailure = nil } }),
+            presenting: controller.startFailure
+        ) { problem in
+            let fix = ProblemFix(
+                controller: controller, navigation: navigation, openWindow: openWindow,
+                openSettings: openSettings, dismiss: {})
+            // The first button is the default: a fix when there is one, else OK.
+            if let action = fix.action(for: problem), action.fixes {
+                Button(action.title, action: action.run)
+                Button("OK", role: .cancel) {}
+            } else {
+                Button("OK") {}
+                if let action = fix.action(for: problem) {
+                    Button(action.title, action: action.run)
+                }
+            }
+        } message: { problem in
+            Text(problem.message())
+        }
     }
 
-    /// The live session until one starts, and after a session with nothing said, is not listed.
+    /// The live session is shown only while one runs; once it stops, its stored transcript is,
+    /// here rather than when the selection moves (`MenuBarLabel`), so the transcript on screen
+    /// never passes through none: that would finish naming it before its speakers are named.
     private var shown: Navigation.Item? {
         let item = navigation.selection ?? (controller.isRecording ? .live : nil)
-        return item == .live && !controller.hasLiveSession ? nil : item
+        guard item == .live, !controller.hasLiveSession else { return item }
+        return controller.savedID.map(Navigation.Item.saved)
     }
 
     private var shownTranscript: UUID? { shown?.transcript(live: controller.savedID) }
@@ -127,7 +159,9 @@ struct MainWindow: View {
             } else if saved.entries.isEmpty, !controller.hasLiveSession, !controller.importing {
                 ContentUnavailableView(
                     "No transcripts yet", systemImage: "waveform",
-                    description: Text("Start listening from the ear in the menu bar."))
+                    description: Text(
+                        "Start listening from the sidebar, with ⌘N, or from the ear in the menu bar."
+                    ))
             } else {
                 ContentUnavailableView(
                     "No transcript selected", systemImage: "waveform",
@@ -158,8 +192,6 @@ struct MainWindow: View {
 }
 
 extension SessionController {
-    /// A session is recording, or one has ended and is still in memory.
-    var hasLiveSession: Bool {
-        state != .idle || !transcript.utterances.isEmpty
-    }
+    /// A session is starting, recording, or stopping: the sidebar's live row is shown.
+    var hasLiveSession: Bool { state != .idle }
 }
