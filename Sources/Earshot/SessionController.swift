@@ -37,9 +37,6 @@ final class SessionController {
     /// The last session ended on its own or could not start, until the next start: the captions
     /// overlay stays with the problem meanwhile.
     var endedOnItsOwn = false
-    /// Utterances the translator settled without a translation: not needed, unavailable, or
-    /// failed. Nothing waits for them; cleared wherever `attempted` is, as they are tried again.
-    var settledTranslations: Set<UUID> = []
     /// The captions overlay was hidden with ✕, until the next start.
     var captionsDismissed = false
     /// The app is quitting: the session ends and saves, with nothing after it.
@@ -75,19 +72,15 @@ final class SessionController {
         didSet {
             UserDefaults.standard.set(primaryLanguage, forKey: "primaryLanguage")
             translator.reset()
-            attempted = [:]
-            settledTranslations = []
             problems.resolve(where: \.isTranslation)
-            translatePending()
+            resetTranslations()
         }
     }
     var translationEnabled: Bool {
         didSet {
             UserDefaults.standard.set(translationEnabled, forKey: "translationEnabled")
             problems.resolve(where: \.isTranslation)
-            attempted = [:]
-            settledTranslations = []
-            translatePending()
+            resetTranslations()
         }
     }
     /// Set when the user asks for a language pair's download; the main window presents Apple's
@@ -117,8 +110,12 @@ final class SessionController {
     @ObservationIgnored private var listeners: [Task<Void, Never>] = []
     private(set) var startedAt = Date.now
     @ObservationIgnored let translator = Translator()
-    /// Source text last sent for translation per utterance, so each version is tried once.
-    @ObservationIgnored var attempted: [UUID: String] = [:]
+    @ObservationIgnored var translationQueue = TranslationQueue()
+    @ObservationIgnored var translationWorker: Task<Void, Never>?
+    /// Observed: words in flight in an unavailable language show as they are.
+    var unavailablePairs = UnavailablePairs()
+    /// What the store holds of each paragraph's translation.
+    @ObservationIgnored var savedTranslations: [UUID: StoredTranslation] = [:]
     @ObservationIgnored private var awake: (any NSObjectProtocol)?
     @ObservationIgnored private var connecting: Task<Void, Never>?
     @ObservationIgnored var unload: Task<Void, Never>?
@@ -130,8 +127,6 @@ final class SessionController {
     @ObservationIgnored private var recordings: SessionRecordings?
     /// The clip runs a little past the last word, so its final phoneme is not cut.
     private static let refinementTail = 0.3
-    @ObservationIgnored var liveInFlight: Set<Channel> = []
-    @ObservationIgnored var liveStale: Set<Channel> = []
     @ObservationIgnored var translationLog = TranslationLog()
     let log = Logger(subsystem: "com.gabrielcosi.earshot", category: "session")
 
@@ -175,8 +170,9 @@ final class SessionController {
             }
             guard let models = library.selection else { throw EngineError.missingModel }
             transcript = Transcript()
-            attempted = [:]
-            settledTranslations = []
+            savedTranslations = [:]
+            translationLog = TranslationLog()
+            resetTranslations()
             refinedUntil = [:]
             refinements = []
             names = [:]
@@ -333,7 +329,7 @@ final class SessionController {
         case .final(let text, let words):
             let final = transcript.applyFinal(transcript: text, words: words, on: channel)
             persist()
-            translatePending()
+            translationChanged()
             refine(final, on: channel)
         case .error(let message):
             log.error("\(channel.rawValue, privacy: .public) stream: \(message, privacy: .public)")
@@ -373,7 +369,7 @@ final class SessionController {
                     }
                     transcript.refine(final, with: shifted)
                     persist()
-                    translatePending()
+                    translationChanged()
                 } catch {
                     log.error("refinement failed: \(error, privacy: .public)")
                 }

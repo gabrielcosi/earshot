@@ -138,22 +138,6 @@ import Testing
             !LanguageDetection.sameLanguage(
                 Locale.Language(identifier: "de"), Locale.Language(identifier: "en")))
     }
-
-    @Test func mergingMakesATranslationStale() {
-        var transcript = Transcript()
-        transcript.applyFinal(
-            transcript: "Hallo", words: [Word(word: "Hallo", start: 0, end: 1, speaker: 1)],
-            on: .system)
-        let id = try? #require(transcript.utterances.first?.id)
-        transcript.setTranslation(
-            Translation(sourceText: "Hallo", text: "Hello"), for: id ?? UUID())
-        #expect(transcript.utterances.first?.currentTranslation == "Hello")
-        transcript.applyFinal(
-            transcript: "zusammen", words: [Word(word: "zusammen", start: 1.2, end: 2, speaker: 1)],
-            on: .system)
-        #expect(transcript.utterances.count == 1)
-        #expect(transcript.utterances.first?.currentTranslation == nil)
-    }
 }
 
 @Suite struct ChunkerTests {
@@ -238,46 +222,6 @@ import Testing
         transcript.setLiveTranslation(
             Translation(sourceText: "Ich glaube", text: "I think"), on: .system)
         #expect(transcript.liveLines == [LiveLine(channel: .system, text: "Wie", translation: nil)])
-    }
-
-    @Test func finalClearsTheLiveTranslation() {
-        var transcript = Transcript()
-        transcript.applyPartial("Hallo", on: .system)
-        transcript.setLiveTranslation(Translation(sourceText: "Hallo", text: "Hello"), on: .system)
-        transcript.applyFinal(
-            transcript: "Hallo", words: [Word(word: "Hallo", start: 0, end: 1, speaker: 1)],
-            on: .system)
-        transcript.applyPartial("Wie", on: .system)
-        #expect(transcript.liveLines == [LiveLine(channel: .system, text: "Wie", translation: nil)])
-    }
-
-    @Test func aSlowTranslationOfAnOlderParagraphDoesNotReplaceANewerOne() throws {
-        var transcript = Transcript()
-        transcript.applyFinal(
-            transcript: "Hallo", words: [Word(word: "Hallo", start: 0, end: 1, speaker: 1)],
-            on: .system)
-        let id = try #require(transcript.utterances.first?.id)
-        transcript.applyFinal(
-            transcript: "zusammen", words: [Word(word: "zusammen", start: 2, end: 3, speaker: 1)],
-            on: .system)
-        transcript.setTranslation(
-            Translation(sourceText: "Hallo zusammen", text: "Hello everyone"), for: id)
-        transcript.setTranslation(Translation(sourceText: "Hallo", text: "Hello"), for: id)
-        #expect(transcript.utterances.first?.translation?.text == "Hello everyone")
-    }
-
-    @Test func aParagraphKeepsShowingItsPreviousTranslationWhileItGrows() throws {
-        var transcript = Transcript()
-        transcript.applyFinal(
-            transcript: "Hallo", words: [Word(word: "Hallo", start: 0, end: 1, speaker: 1)],
-            on: .system)
-        let id = try #require(transcript.utterances.first?.id)
-        transcript.setTranslation(Translation(sourceText: "Hallo", text: "Hello"), for: id)
-        transcript.applyFinal(
-            transcript: "zusammen", words: [Word(word: "zusammen", start: 2, end: 3, speaker: 1)],
-            on: .system)
-        #expect(transcript.utterances.first?.translation?.text == "Hello")
-        #expect(transcript.utterances.first?.currentTranslation == nil)
     }
 }
 

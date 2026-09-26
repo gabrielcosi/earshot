@@ -19,6 +19,10 @@ public struct TranscriptLine: Identifiable, Sendable, Equatable {
     public let start: Double
     public let text: String
     public let translation: String?
+    /// A sentence of the line has its translation, or will stay as it was said, or the line has
+    /// shown before: showing translations alone, the line shows. Always so for a stored
+    /// transcript.
+    public let translationStarted: Bool
 
     /// The short mark beside the name: a speaker's number while unnamed, else the first letter.
     public var badge: String {
@@ -43,12 +47,12 @@ public struct TranscriptLine: Identifiable, Sendable, Equatable {
                 id: paragraph.id.uuidString, speaker: stored.label(paragraph.speaker),
                 voice: voices.voice(for: paragraph.speaker), start: paragraph.start,
                 text: rules?.apply(paragraph.text) ?? paragraph.text,
-                translation: paragraph.translation)
+                translation: paragraph.translation, translationStarted: true)
         }
     }
 
     /// The finished lines of the session in memory, named and tidied as they will be saved. A
-    /// paragraph shows its latest translation, which can trail the text while it grows.
+    /// paragraph still being translated shows as much of its translation as there is.
     public static func lines(
         in transcript: Transcript, names: [Speaker: String] = [:], rules: WordRules? = nil
     ) -> [TranscriptLine] {
@@ -78,7 +82,8 @@ public struct TranscriptLine: Identifiable, Sendable, Equatable {
             speaker: names[utterance.speaker] ?? utterance.speaker.label,
             voice: voices.voice(for: utterance.speaker),
             start: utterance.start, text: rules?.apply(utterance.text) ?? utterance.text,
-            translation: utterance.translation?.text)
+            translation: utterance.translation.text,
+            translationStarted: utterance.translation.started || utterance.translationShown)
     }
 
     /// The microphone and speech with no speaker have colours of their own; the other speakers

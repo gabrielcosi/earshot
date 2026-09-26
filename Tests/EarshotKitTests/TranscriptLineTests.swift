@@ -61,8 +61,10 @@ import Testing
             transcript: "Moin", words: [Word(word: "Moin", start: 3.12, end: 3.4, speaker: 1)],
             on: .system)
         let first = transcript.utterances[0]
-        transcript.setTranslation(
-            Translation(sourceText: first.text, text: "Hello everyone"), for: first.id)
+        transcript.translate(into: "en")
+        transcript.record(.translated("Hello everyone"), for: first.text, into: "en")
+        transcript.record(.kept, for: "Hi", into: "en")
+        transcript.record(.kept, for: "Moin", into: "en")
         let names: [Speaker: String] = [.remote(slot: 1): "Ada"]
         let rules = WordRules()
 

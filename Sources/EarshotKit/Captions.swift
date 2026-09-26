@@ -62,20 +62,22 @@ public enum CaptionsPlacement {
 /// Whether a line is still waiting for its translation, so that showing translations alone shows
 /// nothing for it yet.
 public enum TranslationWait {
-    /// A finished line waits until its translation lands or the translator settles it otherwise.
-    public static func pending(translation: String?, settled: Bool) -> Bool {
-        translation == nil && !settled
+    /// A finished line waits until one of its sentences has an outcome, or a live translation
+    /// was carried onto it. From then on it stays: a sentence merged in later does not hide the
+    /// line while it is translated.
+    public static func pending(translation: String?, started: Bool) -> Bool {
+        translation == nil && !started
     }
 
     /// Words still being recognized are translated as they grow, without an outcome to record,
     /// so the translator's own rule decides: words in the target language are never translated,
-    /// nor those in a language in `unavailable`, whose pair needs a download or is unsupported.
-    /// Words too few to tell the language are the original, and wait.
+    /// nor those in a language in `unavailable`, whose pair needs a download or is unsupported,
+    /// nor words too few to tell the language ("Hm."): all of these show as they are.
     public static func pending(
         live text: String, translation: String?, into target: String, unavailable: [String] = []
     ) -> Bool {
         guard translation == nil else { return false }
-        guard let source = LanguageDetection.dominant(text) else { return true }
+        guard let source = LanguageDetection.dominant(text) else { return false }
         let same = { (code: String) in
             LanguageDetection.sameLanguage(source, Locale.Language(identifier: code))
         }

@@ -124,8 +124,11 @@ struct MenuBarLabel: View {
         .onChange(of: navigation.windowRequested) {
             guard navigation.windowRequested else { return }
             navigation.windowRequested = false
-            openWindow(id: "main")
+            // Active first: asked from the captions overlay, a panel that never activates
+            // Earshot, a window ordered front before it may stay behind the active app's, and
+            // with it Apple's download prompt.
             NSApp.activate()
+            openWindow(id: "main")
         }
         .onChange(of: navigation.settingsRequested) {
             guard navigation.settingsRequested else { return }

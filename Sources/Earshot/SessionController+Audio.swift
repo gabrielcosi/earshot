@@ -26,8 +26,13 @@ extension SessionController {
             log.notice(
                 "relabelled \(pcm.count / 32_000) s of audio: \(turns.count) turns, \(Set(turns.map(\.speaker)).count) speakers"
             )
+            if translationEnabled {
+                let coverage = transcript.sentenceCoverage
+                translationLog.relabelled(hits: coverage.known, misses: coverage.pending)
+            }
+            // Stored before the session is sealed, so its first Markdown file has them.
             persist()
-            translatePending()
+            translationChanged()
         } catch {
             log.error("speaker relabelling failed: \(error, privacy: .public)")
         }

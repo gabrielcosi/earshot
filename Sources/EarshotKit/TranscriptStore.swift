@@ -162,12 +162,16 @@ extension TranscriptStore {
         }
     }
 
-    /// Keeps one translation per paragraph. One for a paragraph that is gone, replaced by
-    /// relabelling while it was being made, is dropped.
+    /// Keeps one translation per paragraph; nil removes it. One for a paragraph that is gone,
+    /// replaced by relabelling while it was being made, is dropped.
     public func setTranslation(
-        _ text: String, of source: String, language: String, for paragraph: UUID
+        _ text: String?, of source: String, language: String, for paragraph: UUID
     ) throws {
         try writer.write { db in
+            guard let text else {
+                _ = try TranslationRecord.filter(Column("paragraphId") == paragraph).deleteAll(db)
+                return
+            }
             guard try ParagraphRecord.exists(db, key: paragraph) else { return }
             var record =
                 try TranslationRecord.filter(Column("paragraphId") == paragraph).fetchOne(db)

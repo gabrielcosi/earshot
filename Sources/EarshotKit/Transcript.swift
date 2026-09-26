@@ -82,15 +82,19 @@ public struct Utterance: Identifiable, Sendable, Equatable {
     public let start: Double
     public var end: Double
     public var segments: [Segment]
-    public var translation: Translation?
+    /// Kept by the transcript that holds the paragraph, from its sentences' outcomes.
+    public internal(set) var translation = ParagraphTranslation.untranslated
+    /// The paragraph's sentences, split again whenever its text changes.
+    public internal(set) var sentences: [String] = []
+    /// The live translation of the words its latest final added, shown after the translated
+    /// sentences until one from `carriedFrom` on, where those words start, is translated.
+    var carried: String?
+    var carriedFrom = 0
+    /// Showing translations alone, the line has shown, and stays through a change of language.
+    public internal(set) var translationShown = false
 
     public var text: String {
         segments.map(\.text).filter { !$0.isEmpty }.joined(separator: " ")
-    }
-
-    /// A translation stays attached to the text it was made from; merges make it stale.
-    public var currentTranslation: String? {
-        translation.flatMap { $0.sourceText == text ? $0.text : nil }
     }
 
     public init(
@@ -98,15 +102,13 @@ public struct Utterance: Identifiable, Sendable, Equatable {
         speaker: Speaker,
         start: Double,
         end: Double,
-        text: String,
-        translation: Translation? = nil
+        text: String
     ) {
         self.id = id
         self.speaker = speaker
         self.start = start
         self.end = end
         self.segments = [Segment(id: UUID(), start: start, end: end, text: text)]
-        self.translation = translation
     }
 }
 
@@ -134,8 +136,46 @@ public struct Transcript: Sendable, Equatable {
     public private(set) var utterances: [Utterance] = []
     public private(set) var partials: [Channel: String] = [:]
     private var liveTranslations: [Channel: Translation] = [:]
+    /// The language translated into; nil while nothing is translated.
+    public internal(set) var translationTarget: String?
+    /// Every sentence translated this session, by its text, so a sentence is translated once
+    /// however often its paragraph changes or is rebuilt.
+    var outcomes: [String: SentenceOutcome] = [:]
 
     public init() {}
+
+    mutating func compose(at index: Int) {
+        let utterance = utterances[index]
+        let translation = ParagraphTranslation.compose(
+            utterance.sentences, outcomes: outcomes, carried: utterance.carried,
+            from: utterance.carriedFrom, into: translationTarget)
+        utterances[index].translation = translation
+        if translation.started || translation.text != nil {
+            utterances[index].translationShown = true
+        }
+    }
+
+    /// The paragraph's text changed: its sentences are split again. Returns the first sentence
+    /// that is not as it was.
+    @discardableResult
+    mutating func textChanged(at index: Int) -> Int {
+        let before = utterances[index].sentences
+        utterances[index].sentences = Sentences.split(utterances[index].text)
+        compose(at: index)
+        return zip(before, utterances[index].sentences).prefix { $0 == $1 }.count
+    }
+
+    mutating func composeAll() {
+        for index in utterances.indices { compose(at: index) }
+    }
+
+    /// Live translations, of the words in flight and carried onto finished lines, are in the
+    /// language they were made for: a new target, or translation turned off, drops them.
+    public mutating func dropLiveTranslations() {
+        liveTranslations = [:]
+        for index in utterances.indices { utterances[index].carried = nil }
+        composeAll()
+    }
 
     /// Each channel's words in flight, the microphone first.
     public var liveLines: [LiveLine] {
@@ -156,7 +196,7 @@ public struct Transcript: Sendable, Equatable {
         -> AppliedFinal
     {
         partials[channel] = nil
-        liveTranslations[channel] = nil
+        let carried = liveTranslations.removeValue(forKey: channel)?.text
         var runs = Self.runs(words: words, channel: channel)
         if runs.isEmpty {
             let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -171,7 +211,11 @@ public struct Transcript: Sendable, Equatable {
                 var utterance = Utterance(
                     speaker: run.speaker, start: run.start, end: run.end, text: run.text)
                 utterance.segments[0].words = run.words
-                insert(utterance)
+                let index = insert(utterance)
+                // A final split between speakers has no one run its live translation matches.
+                utterances[index].carried = runs.count == 1 ? carried : nil
+                utterances[index].carriedFrom = textChanged(at: index)
+                compose(at: index)
                 let segment = utterance.segments[0]
                 return SegmentSpan(id: segment.id, start: segment.start, end: segment.end)
             })
@@ -199,6 +243,7 @@ public struct Transcript: Sendable, Equatable {
                 utterances[index].segments[position].text =
                     words.map(\.word).joined(separator: " ")
                 utterances[index].segments[position].words = words
+                textChanged(at: index)
             }
         }
     }
@@ -223,6 +268,13 @@ public struct Transcript: Sendable, Equatable {
         utterances = []
         for utterance in (kept + rebuilt).sorted(by: { $0.start < $1.start }) {
             insert(utterance)
+        }
+        // Rebuilt paragraphs look their sentences up in the session's outcomes, so what was
+        // translated while listening shows at once; all were on screen as they were heard.
+        for index in utterances.indices {
+            utterances[index].carried = nil
+            utterances[index].translationShown = true
+            textChanged(at: index)
         }
     }
 
@@ -290,20 +342,6 @@ public struct Transcript: Sendable, Equatable {
         time < span.start ? span.start - time : max(0, time - span.end)
     }
 
-    /// Translations finish out of order; one made from less of the paragraph never replaces one
-    /// made from more, unless a refinement has since rewritten the text the older one covered.
-    public mutating func setTranslation(_ translation: Translation, for id: UUID) {
-        guard let index = utterances.firstIndex(where: { $0.id == id }) else { return }
-        let text = utterances[index].text
-        guard text.hasPrefix(translation.sourceText) else { return }
-        if let current = utterances[index].translation, text.hasPrefix(current.sourceText),
-            current.sourceText.count > translation.sourceText.count
-        {
-            return
-        }
-        utterances[index].translation = translation
-    }
-
     /// Kept only while the channel's partial still starts with the text that was translated.
     public mutating func setLiveTranslation(_ translation: Translation, on channel: Channel) {
         guard let partial = partials[channel], partial.hasPrefix(translation.sourceText) else {
@@ -315,15 +353,18 @@ public struct Transcript: Sendable, Equatable {
     /// Endpointing cuts a final after 800 ms of silence, so a slow speaker arrives in fragments.
     /// A final joins the last paragraph when that paragraph is the same speaker's: a turn lasts
     /// until someone else speaks, however long the pauses.
-    private mutating func insert(_ utterance: Utterance) {
+    /// Returns where the utterance went.
+    @discardableResult
+    private mutating func insert(_ utterance: Utterance) -> Int {
         let index = utterances.lastIndex { $0.start <= utterance.start }.map { $0 + 1 } ?? 0
         if index > 0, index == utterances.count, utterances[index - 1].speaker == utterance.speaker
         {
             utterances[index - 1].segments += utterance.segments
             utterances[index - 1].end = utterance.end
-            return
+            return index - 1
         }
         utterances.insert(utterance, at: index)
+        return index
     }
 
     private struct Run {

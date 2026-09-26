@@ -107,3 +107,19 @@ import Testing
         #expect(problems.all == [.summaryFailed(.keyRefused)])
     }
 }
+
+/// A partial's one word reads as another language ("ja" as Finnish): only a finished sentence
+/// raises a download, once per pair; words in flight only mark their language.
+@Suite struct UnavailablePairsTests {
+    @Test func onlyASentenceReportsItsPairOnce() {
+        var pairs = UnavailablePairs()
+        let finnish = Problem.translationNeedsDownload(from: "fi", to: "en")
+        #expect(pairs.found(finnish, bySentence: false) == nil)
+        #expect(pairs.sources == ["fi"])
+        #expect(pairs.found(finnish, bySentence: true) == finnish)
+        #expect(pairs.found(finnish, bySentence: true) == nil)
+        #expect(
+            pairs.found(.translationUnsupported(from: "ro", to: "en"), bySentence: false) == nil)
+        #expect(pairs.sources == ["fi", "ro"])
+    }
+}

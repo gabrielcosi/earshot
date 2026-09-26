@@ -168,3 +168,28 @@ public struct Problems: Sendable, Equatable {
         resolve { $0.endsWithSession }
     }
 }
+
+/// Language pairs found to need a download or be unsupported since translation last started
+/// over. Only a finished sentence reports its pair's problem, once: words in flight are detected
+/// alone and without context, and one word reads as another language ("ja" as Finnish), which
+/// would raise a download nobody needs. They only mark their language, so words in it show as
+/// they are instead of waiting for a translation that will not come.
+public struct UnavailablePairs: Sendable, Equatable {
+    /// The source languages found, whose words in flight show as they are.
+    public private(set) var sources: Set<String> = []
+    private var reported: Set<String> = []
+
+    public init() {}
+
+    /// The problem to report now, if any.
+    public mutating func found(_ problem: Problem, bySentence: Bool) -> Problem? {
+        switch problem {
+        case .translationNeedsDownload(let source, _), .translationUnsupported(let source, _):
+            sources.insert(source)
+        default:
+            return nil
+        }
+        guard bySentence, reported.insert(problem.id).inserted else { return nil }
+        return problem
+    }
+}

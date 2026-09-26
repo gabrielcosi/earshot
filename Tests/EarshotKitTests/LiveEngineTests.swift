@@ -125,6 +125,7 @@ struct LiveEngineTests {
             previousEnd = end
         }
         let before = transcript.utterances.map { "\($0.speaker.label): \($0.text)" }
+        let translated = Set(transcript.utterances.flatMap { Sentences.split($0.text) })
         let url = try #require(
             Bundle.module.url(forResource: "Fixtures/\(fixture)", withExtension: "wav"))
         let pcm = try Data(contentsOf: url).dropFirst(44)
@@ -133,8 +134,17 @@ struct LiveEngineTests {
             try await Retranscriber.transcribe(
                 turns: turns, pcm: pcm, engine: Self.engine, allowed: []))
         let after = transcript.utterances.map { "\($0.speaker.label): \($0.text)" }
+        // Sentences translated while listening are not translated again once relabelled. A turn's
+        // own audio is decoded afresh, so some come back with another word, capital, or full
+        // stop: a third to three fifths were reused on these fixtures.
+        let rebuilt = transcript.utterances.flatMap { Sentences.split($0.text) }
+        let reused = Double(rebuilt.filter(translated.contains).count) / Double(rebuilt.count)
         print(
-            "live:\n  \(before.joined(separator: "\n  "))\nrelabelled:\n  \(after.joined(separator: "\n  "))"
+            "live:\n  \(before.joined(separator: "\n  "))\nrelabelled:\n  \(after.joined(separator: "\n  "))\nsentences reused: \(reused)"
+        )
+        #expect(
+            reused >= 0.3,
+            "fewer sentences reused across relabelling than measured: a tripwire for an engine or model change"
         )
         return transcript
     }

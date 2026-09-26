@@ -74,6 +74,8 @@ struct MainWindow: View {
         // Here rather than on a view inside, so the prompt shows whatever is selected.
         .translationTask(controller.downloadRequest) { session in
             let (source, target) = (session.sourceLanguage, session.targetLanguage)
+            controller.translationLog.download(
+                .started, from: source?.minimalIdentifier, to: target?.minimalIdentifier)
             do {
                 try await session.prepareTranslation()
                 controller.downloadFinished(from: source, to: target)
