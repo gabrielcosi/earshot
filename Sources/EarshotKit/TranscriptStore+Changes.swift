@@ -1,6 +1,75 @@
 import Foundation
 import GRDB
 
+// MARK: - The title
+
+extension TranscriptStore {
+    /// Gives the transcript a title, stored as one trimmed line: the Markdown file's heading is
+    /// `# title`, and a line break in it would add lines the migration reads as transcript lines.
+    /// An empty title gives back Earshot's own, made from the time. Returns the title it had, for
+    /// undo, or nil when nothing changed or there is no such transcript.
+    @discardableResult
+    public func setTitle(_ title: String?, of transcript: UUID) throws -> String?? {
+        let title = title.map {
+            $0.split(whereSeparator: \.isNewline).joined(separator: " ")
+                .trimmingCharacters(in: .whitespaces)
+        }
+        let new = title?.isEmpty == false ? title : nil
+        return try writer.write { db in
+            guard var record = try TranscriptRecord.fetchOne(db, key: transcript),
+                record.title != new
+            else { return nil }
+            let previous = record.title
+            record.title = new
+            try record.update(db)
+            return .some(previous)
+        }
+    }
+}
+
+// MARK: - Deleting
+
+/// Kept audio of a deleted transcript whose file is still to be removed. A file name means
+/// nothing on another Mac, so this table is never synced.
+struct PendingRemovalRecord: Codable, FetchableRecord, PersistableRecord {
+    static let databaseTableName = "local_pending_removal"
+    var id: UUID
+    var name: String
+}
+
+extension TranscriptStore {
+    /// Deletes the transcripts and everything they hold, and records their kept audio to be
+    /// removed, in one transaction: a crash before the files are gone leaves their names, not
+    /// files nothing knows about. Returns the file names, as the store has them.
+    @discardableResult
+    public func delete(_ transcripts: Set<UUID>) throws -> [String] {
+        try writer.write { db in
+            let records = try TranscriptRecord.filter(keys: transcripts).fetchAll(db)
+            _ = try TranscriptRecord.deleteAll(db, keys: transcripts)
+            let audio = records.compactMap(\.audio)
+            for name in audio { try PendingRemovalRecord(id: UUID(), name: name).insert(db) }
+            return audio
+        }
+    }
+
+    /// Removes the kept audio of deleted transcripts from `folder`, each name once its file is
+    /// gone, and returns the names. Run after a delete, and at launch for any a crash or a failed
+    /// removal left. Only those files: audio the store has no transcript for but never deleted,
+    /// such as audio kept while the store could not be opened, is not Earshot's to remove.
+    public func removeDeletedAudio(in folder: URL) throws -> [String] {
+        let pending = try writer.read { try PendingRemovalRecord.fetchAll($0) }
+        for record in pending {
+            do {
+                try FileManager.default.removeItem(at: folder.appending(path: record.name))
+            } catch CocoaError.fileNoSuchFile {
+                // Already gone: nothing is left to remove.
+            }
+            _ = try writer.write { try record.delete($0) }
+        }
+        return pending.map(\.name).sorted()
+    }
+}
+
 // MARK: - Names and the summary
 
 extension TranscriptStore {
@@ -50,12 +119,14 @@ extension TranscriptStore {
 
     /// Stores a summary that was started with `labelsAtStart`. A summary takes up to a minute,
     /// so the speakers may have been renamed meanwhile: it is brought up to the names as they
-    /// are when it is written, and nothing else in the store is touched.
+    /// are when it is written, and nothing else in the store is touched. False when the
+    /// transcript was deleted meanwhile, and there is nothing to store it with.
+    @discardableResult
     public func setSummary(
         _ text: String, model: String, for transcript: UUID, labelsAtStart: [Speaker: String]
-    ) throws {
+    ) throws -> Bool {
         try writer.write { db in
-            guard try TranscriptRecord.exists(db, key: transcript) else { return }
+            guard try TranscriptRecord.exists(db, key: transcript) else { return false }
             var record =
                 try SummaryRecord.filter(Column("transcriptId") == transcript).fetchOne(db)
                 ?? SummaryRecord(
@@ -65,6 +136,7 @@ extension TranscriptStore {
             record.createdAt = .now
             try record.upsert(db)
             try Self.updateSummaryLabels(transcript, from: labelsAtStart, in: db)
+            return true
         }
     }
 

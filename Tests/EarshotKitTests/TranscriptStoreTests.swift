@@ -282,6 +282,7 @@ import Testing
                 Set(tables) == [
                     "transcript", "paragraph", "paragraph_edit", "speaker_name", "translation",
                     "summary", "local_export", "local_migration", "local_migration_file",
+                    "local_pending_removal",
                 ])
             for table in tables {
                 let key = try Row.fetchAll(db, sql: "PRAGMA table_info(\(table))")

@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Recording.removeLeftovers()
+        controller.removeDeletedAudio()
         controller.sealUnfinished()
         Task {
             await controller.importEarlierTranscripts()
@@ -136,12 +137,14 @@ struct MenuBarLabel: View {
             openSettings()
             NSApp.activate()
         }
-        // A session that stops leaves the sidebar's top row; its stored transcript takes the
-        // selection, in its day, or nothing when nothing was said. Here, as the window may be
-        // closed; the window shows the stored transcript meanwhile (`MainWindow.shown`).
+        // A session that stops leaves the sidebar's top row; its stored transcript takes its
+        // place in the selection, in its day, or nothing when nothing was said. Here, as the
+        // window may be closed; the window shows the stored transcript meanwhile
+        // (`MainWindow.shown`).
         .onChange(of: controller.state) {
-            guard controller.state == .idle, navigation.selection == .live else { return }
-            navigation.selection = controller.savedID.map(Navigation.Item.saved)
+            guard controller.state == .idle, navigation.selection.contains(.live) else { return }
+            navigation.selection.remove(.live)
+            if let savedID = controller.savedID { navigation.selection.insert(.saved(savedID)) }
         }
         // The label lives as long as the app, so a session that ends while the menu is closed
         // still gets its speakers panel, the next time the window opens.

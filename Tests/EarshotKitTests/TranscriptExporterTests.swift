@@ -70,6 +70,27 @@ import Testing
         #expect(try exporter.status(of: id, in: folder) == .missing(expectedFile))
     }
 
+    /// A new title is the file's heading, written into the same file.
+    @Test func aRenamedTranscriptKeepsItsFileWithTheNewHeading() throws {
+        try exporter.export(id, to: folder)
+        try store.setTitle("Weekly sync", of: id)
+        #expect(try exporter.export(id, to: folder) == .current(expectedFile))
+        #expect(try contents(expectedFile).hasPrefix("# Weekly sync\n"))
+    }
+
+    /// Deleting a transcript keeps its file, and an export that runs after it writes nothing.
+    @Test func aDeletedTranscriptLeavesItsFileAndIsNotWrittenAgain() throws {
+        try exporter.export(id, to: folder)
+        let before = try contents(expectedFile)
+        try store.delete([id])
+
+        #expect(try exporter.export(id, to: folder) == .notExported)
+        #expect(try contents(expectedFile) == before)
+        #expect(
+            try FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false))
+                .count == 1)
+    }
+
     @Test func aFirstExportNeverReplacesAFileAlreadyThere() throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let theirs = "# A file Earshot did not write\n"

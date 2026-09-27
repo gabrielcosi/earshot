@@ -18,10 +18,16 @@ extension SessionController {
                 engine: preferences.summaryEngine, endpoint: preferences.summaryEndpoint)
             // Written against the store as it is now: only the summary changes, brought up to
             // any names given while it was being written.
-            try store.setSummary(summary, model: model, for: transcript, labelsAtStart: view.labels)
+            // A transcript deleted meanwhile has no file to write, and no status to keep.
+            guard
+                try store.setSummary(
+                    summary, model: model, for: transcript, labelsAtStart: view.labels)
+            else { return }
             scheduleExport(transcript)
             dismissSummaryFailure(transcript)
         } catch {
+            // Deleted while it was being written: there is nothing to report it on.
+            if case .success(nil) = Result(catching: { try store.view(transcript) }) { return }
             log.error("summary failed: \(error, privacy: .public)")
             let failure: Problem = .summaryFailed(
                 SummaryFailure(error)

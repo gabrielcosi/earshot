@@ -118,6 +118,12 @@ public final class TranscriptStore: Sendable {
                 table.column("imported", .boolean).notNull()
             }
         }
+        migrator.registerMigration("v3") { db in
+            try db.create(table: "local_pending_removal") { table in
+                table.primaryKey("id", .blob)
+                table.column("name", .text).notNull()
+            }
+        }
         return migrator
     }
 
@@ -136,7 +142,8 @@ extension TranscriptStore {
     /// already holds unchanged are not written again: an hour holds some ten thousand timed words,
     /// and each final changes one paragraph. The transcript is created with its first paragraph,
     /// so a session in which nothing was said leaves nothing behind. A sealed transcript's
-    /// paragraphs are the original and do not change.
+    /// paragraphs are the original and do not change, and one that was saved before and is gone
+    /// was deleted: a late save does not bring it back.
     public func saveLive(
         _ transcript: UUID, startedAt: Date, utterances: [Utterance], previous: [Utterance] = []
     ) throws {
@@ -145,6 +152,7 @@ extension TranscriptStore {
             if let existing = try TranscriptRecord.fetchOne(db, key: transcript) {
                 guard existing.endedAt == nil else { return }
             } else {
+                guard previous.isEmpty else { return }
                 try TranscriptRecord(id: transcript, startedAt: startedAt, origin: "live")
                     .insert(db)
             }

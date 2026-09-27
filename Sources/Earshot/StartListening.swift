@@ -28,7 +28,7 @@ struct StartListening {
         guard isPossible else { return }
         guard controller.library.selection != nil else { return setUpModels() }
         let captions = controller.preferences.showsCaptions
-        navigation.selection = .live
+        navigation.selection = [.live]
         if !captions {
             openWindow(id: "main")
             NSApp.activate()
@@ -37,7 +37,7 @@ struct StartListening {
         // A start that failed leaves nothing to show; the window goes back to where it was, and
         // stays in front with its alert.
         if controller.state == .idle {
-            navigation.selection = nil
+            navigation.selection = []
         } else if captions, let dismissWindow {
             // Capture has started. A failure from here on, such as the engine not loading, ends
             // the session on its own, and the overlay says why. Hiding alone would not last:

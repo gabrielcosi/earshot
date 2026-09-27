@@ -42,13 +42,15 @@ struct SpeakersPanel: View {
 
     /// The panel closes, or another transcript opens: what is typed and valid is stored, and
     /// naming this transcript is done. Undo is for the transcript on screen, so names stored as
-    /// another one opens are not undone from it.
+    /// another one opens are not undone from it. Selecting several hides the panel without
+    /// opening another transcript, so naming waits for one to be shown.
     private func close() {
         player.stop()
-        let shown = navigation.selection?.transcript(live: controller.savedID)
+        let shown = navigation.selected?.transcript(live: controller.savedID)
         save(undoable: shown == transcript)
         drafts = [:]
-        if let transcript { controller.finishNaming(transcript) }
+        guard let transcript, shown != nil || !navigation.showsSpeakers else { return }
+        controller.finishNaming(transcript)
     }
 
     @ViewBuilder private var content: some View {

@@ -259,6 +259,24 @@ import Testing
                 atPath: audio.appending(path: copy).path(percentEncoded: false)))
     }
 
+    /// A transcript deleted while the migration is unfinished stays deleted: its file is still
+    /// known by its path and its contents, even renamed, and is not brought in again.
+    @Test func aDeletedImportedTranscriptIsNotBroughtInAgain() async throws {
+        let first = try write("# A\n\n" + untouched, "A.md")
+        _ = try write("# B\n\n" + untouched, "B.md")
+        try Data("audio".utf8).write(to: folder.appending(path: "B.m4a"))
+        // A file where the Audio folder goes fails B's audio copy, so the run stays unfinished.
+        try Data().write(to: audio)
+        await #expect(throws: (any Error).self) { try await migration.run(in: folder) }
+        let imported = try #require(try store.list().first { $0.title == "A" })
+
+        try store.delete([imported.id])
+        try FileManager.default.removeItem(at: audio)
+        try FileManager.default.moveItem(at: first, to: folder.appending(path: "A renamed.md"))
+        try await migration.run(in: folder)
+        #expect(try store.list().map(\.title) == ["B"])
+    }
+
     /// A file that cannot be read now, such as one without permission, is not listed as
     /// unreadable for good: the next run brings it in.
     @Test func aFileThatCannotBeReadNowIsImportedLater() async throws {

@@ -86,6 +86,74 @@ extension SessionController {
         return true
     }
 
+    /// Titles the transcript, as one step Undo takes back; an empty title gives back Earshot's.
+    func setTitle(_ title: String?, of transcript: UUID, undoManager: UndoManager?) {
+        let previous: String??
+        do {
+            previous = try store.setTitle(title, of: transcript)
+        } catch {
+            return reportSavingFailed(error)
+        }
+        guard case .some(let previous) = previous else { return }
+        scheduleExport(transcript)
+        undoManager?.registerUndo(withTarget: self) { [weak undoManager] controller in
+            controller.setTitle(previous, of: transcript, undoManager: undoManager)
+        }
+        undoManager?.setActionName("Rename Transcript")
+    }
+
+    /// The transcripts among `items` that can be deleted: all but the session being started,
+    /// recorded, or stopped, which is still being written.
+    func deletable(_ items: Set<Navigation.Item>) -> Set<UUID> {
+        Set(
+            items.compactMap { item in
+                guard case .saved(let transcript) = item, transcript != liveSavedID else {
+                    return nil
+                }
+                return transcript
+            })
+    }
+
+    /// Deletes the transcripts and their kept audio; their Markdown copies stay. Exports running
+    /// for them finish first, so none writes a file or reports a failure once the rows are gone.
+    /// Naming one of them ends with no summary. False when the store could not delete them.
+    func delete(_ transcripts: Set<UUID>) async -> Bool {
+        exportAgain.subtract(transcripts)
+        while let run = transcripts.lazy.compactMap({ self.exportRuns[$0] }).first {
+            await run.value
+            exportAgain.subtract(transcripts)
+        }
+        do {
+            try store.delete(transcripts)
+        } catch {
+            reportSavingFailed(error)
+            return false
+        }
+        for transcript in transcripts {
+            exports[transcript] = nil
+            dismissSummaryFailure(transcript)
+        }
+        if let awaiting = awaitingNaming, transcripts.contains(awaiting) {
+            awaitingNaming = nil
+            discardLastRecording()
+        }
+        if let savedID, transcripts.contains(savedID) { self.savedID = nil }
+        log.notice("deleted \(transcripts.count) transcripts")
+        removeDeletedAudio()
+        return true
+    }
+
+    /// Removes the kept audio of deleted transcripts: after a delete, and at launch for any a
+    /// crash or a failed removal left; the store remembers which until each file is gone.
+    func removeDeletedAudio() {
+        do {
+            let removed = try store.removeDeletedAudio(in: Self.audioFolder)
+            if !removed.isEmpty { log.notice("removed \(removed.count) deleted audio files") }
+        } catch {
+            log.error("removing deleted audio failed: \(error, privacy: .public)")
+        }
+    }
+
     /// At launch, before a session can start: a session a crash or a forced quit left open is
     /// sealed as it was. Later, any open transcript is the session being recorded.
     func sealUnfinished() {
