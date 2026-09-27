@@ -29,20 +29,8 @@ struct SettingsWindow: View {
 
 struct GeneralSettings: View {
     @Environment(SessionController.self) private var controller
+    @Environment(Navigation.self) private var navigation
     @AppStorage(CaptionsSettings.textSize) private var captionSize = CaptionTextSize.medium
-
-    /// Low was measured on a real session. Medium and High were measured on the test fixtures,
-    /// both sides speaking: 36 and 43 MB an hour, against Low's 27 on the same audio, and 25 and
-    /// 32 with the microphone off. The fixtures have nothing above 8 kHz, which Medium and High
-    /// keep, so real audio comes out a little larger; both sides speaking without a pause, it
-    /// measured 47 and 62.
-    private static func megabytesPerHour(_ quality: AudioQuality) -> Int {
-        switch quality {
-        case .low: 23
-        case .medium: 35
-        case .high: 45
-        }
-    }
 
     var body: some View {
         @Bindable var controller = controller
@@ -52,7 +40,7 @@ struct GeneralSettings: View {
                 Toggle(isOn: $preferences.keepAudio) {
                     Text("Keep audio")
                     Text(
-                        "Keeps a recording of your microphone and the Mac's sound with each transcript (about \(Self.megabytesPerHour(preferences.keepAudioQuality)) MB an hour), so every line can be played back."
+                        "Keeps a recording of your microphone and the Mac's sound with each transcript (about \(preferences.keepAudioQuality.megabytesPerHour) MB an hour), so every line can be played back."
                     )
                 }
                 Picker(selection: $preferences.keepAudioQuality) {
@@ -189,6 +177,12 @@ struct GeneralSettings: View {
                     } else {
                         controller.scheduleUnload()
                     }
+                }
+                LabeledContent {
+                    Button("Show Welcome…") { navigation.setupRequested = .welcome }
+                } label: {
+                    Text("Setup")
+                    Text("Download the models, check that Earshot can hear, and pick your options.")
                 }
             }
         }

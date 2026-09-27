@@ -16,8 +16,23 @@ struct EarshotApp: App {
             MenuBarLabel(captions: delegate.captions)
                 .environment(delegate.controller)
                 .environment(delegate.navigation)
+                .environment(delegate.setup)
         }
         .menuBarExtraStyle(.window)
+
+        // A window, not a sheet: at first launch there is no window to hang a sheet on.
+        Window("Welcome to Earshot", id: "setup") {
+            SetupWindow()
+                .environment(delegate.controller)
+                .environment(delegate.navigation)
+                .environment(delegate.setup)
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+        .windowBackgroundDragBehavior(.enabled)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.suppressed)
+        .defaultPosition(.center)
 
         Window("Earshot", id: "main") {
             MainWindow()
@@ -46,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let navigation = Navigation()
     let updater = Updater()
     let captions = Captions()
+    let setup = SetupModel()
 
     /// A second copy would delete the recordings of the first one's session as it launched.
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -86,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// connections are open, and the transcript is saved. Markdown files being written are
     /// finished too.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        setup.quitting = true
         guard controller.state != .idle || controller.exporting else { return .terminateNow }
         Task {
             if controller.state != .idle { await controller.finishForQuit() }
@@ -101,12 +118,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// The menu bar icon. It exists from launch, so it also opens Settings when no model is
-/// downloaded yet.
+/// The menu bar icon. It exists from launch, so it also opens setup when Earshot is new, or
+/// has no model.
 struct MenuBarLabel: View {
     let captions: Captions
     @Environment(SessionController.self) private var controller
     @Environment(Navigation.self) private var navigation
+    @Environment(SetupModel.self) private var setup
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
 
@@ -117,10 +135,17 @@ struct MenuBarLabel: View {
         )
         .task {
             if controller.preferences.keepEngineLoaded { controller.prewarm() }
-            guard controller.library.selection == nil else { return }
-            navigation.settingsTab = .models
-            openSettings()
-            NSApp.activate()
+            let decision = SetupLaunch.atLaunch(
+                done: SetupModel.isDone, started: SetupModel.isStarted,
+                hasModel: controller.library.selection != nil,
+                hasTranscripts: (try? controller.store.list().isEmpty) == false)
+            if decision.markDone { SetupModel.markDone() }
+            if let step = decision.show { openSetup(at: step) }
+        }
+        .onChange(of: navigation.setupRequested) {
+            guard let step = navigation.setupRequested else { return }
+            navigation.setupRequested = nil
+            openSetup(at: step)
         }
         .onChange(of: navigation.windowRequested) {
             guard navigation.windowRequested else { return }
@@ -170,6 +195,13 @@ struct MenuBarLabel: View {
         .onChange(of: controller.preferences.showsCaptions) {
             controller.captionsDismissed = false
         }
+    }
+
+    /// A setup already open moves to the step asked for.
+    private func openSetup(at step: SetupStep) {
+        setup.flow = SetupFlow(from: step)
+        NSApp.activate()
+        openWindow(id: "setup")
     }
 
     /// While listening, and after a session that ended on its own, with why, until ✕, the next
@@ -223,7 +255,6 @@ struct MenuContent: View {
     @Environment(SessionController.self) private var controller
     @Environment(Navigation.self) private var navigation
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
     /// Closes this panel: an action that brings up a window takes it out of the way.
     @Environment(\.dismiss) private var dismiss
 
@@ -240,7 +271,7 @@ struct MenuContent: View {
                     dismiss()
                     start.setUpModels()
                 } label: {
-                    Label("Set Up Models…", systemImage: "arrow.down.circle")
+                    Label("Set Up Earshot…", systemImage: "arrow.down.circle")
                         .frame(maxWidth: .infinity)
                 }
                 .controlSize(.large)
@@ -256,7 +287,9 @@ struct MenuContent: View {
                 .controlSize(.large)
                 .buttonStyle(.borderedProminent)
                 .tint(controller.isRecording ? .red : .accentColor)
-                .disabled(controller.state == .starting || controller.state == .stopping)
+                .disabled(
+                    controller.state == .starting || controller.state == .stopping
+                        || controller.checkingSystemAudio)
             }
 
             Toggle(isOn: $preferences.useMicrophone) {
@@ -310,9 +343,7 @@ struct MenuContent: View {
     }
 
     private var start: StartListening {
-        StartListening(
-            controller: controller, navigation: navigation, openWindow: openWindow,
-            openSettings: openSettings)
+        StartListening(controller: controller, navigation: navigation, openWindow: openWindow)
     }
 
     private func toggle() {

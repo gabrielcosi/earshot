@@ -32,6 +32,9 @@ final class SessionController {
     var namingRequest: NamingRequest?
     /// The session that just ended, until naming its speakers is done: `finishNaming`.
     @ObservationIgnored var awaitingNaming: UUID?
+    /// Setup is playing its ding to check System Audio Recording: nothing starts meanwhile, or
+    /// the ding would be transcribed.
+    var checkingSystemAudio = false
     /// A session ended on its own and the menu has not been opened since.
     var needsAttention = false
     /// The last session ended on its own or could not start, until the next start: the captions

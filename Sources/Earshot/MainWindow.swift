@@ -30,6 +30,8 @@ final class Navigation {
     var windowRequested = false
     /// The same for Settings, at `settingsTab`.
     var settingsRequested = false
+    /// The same for setup, at this step.
+    var setupRequested: SetupStep?
     /// A stored transcript to open with the speakers panel: set when a session stops.
     var naming: UUID?
     /// The speakers panel beside the transcript, opened and closed by Name Speakers.

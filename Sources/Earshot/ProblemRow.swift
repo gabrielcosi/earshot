@@ -86,8 +86,19 @@ struct ProblemFix {
     }
 
     private func openMicrophoneSettings() {
-        let pane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
-        if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
+        Self.openPrivacySettings(.microphone)
+    }
+
+    enum PrivacyPane: String {
+        case microphone = "Privacy_Microphone"
+        /// Screen & System Audio Recording.
+        case systemAudio = "Privacy_AudioCapture"
+    }
+
+    static func openPrivacySettings(_ pane: PrivacyPane) {
+        let address =
+            "x-apple.systempreferences:com.apple.preference.security?\(pane.rawValue)"
+        if let url = URL(string: address) { NSWorkspace.shared.open(url) }
     }
 
     private func showGeneralSettings() {

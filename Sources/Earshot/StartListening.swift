@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Starts a session from wherever it is asked for: the menu bar, the sidebar's first row, or
-/// File > Start Listening. With no model chosen yet, Settings opens on Models instead. Otherwise
+/// File > Start Listening. With no model chosen yet, setup opens on its models instead. Otherwise
 /// the window opens on the live session and listening starts; what goes wrong is reported to
 /// the menu's problems. With the captions overlay on, the overlay is where the session shows: a
 /// start from the menu bar opens no window, and one from the window closes it, so the call behind
@@ -11,17 +11,15 @@ struct StartListening {
     let controller: SessionController
     let navigation: Navigation
     let openWindow: OpenWindowAction
-    let openSettings: OpenSettingsAction
     /// Set when started from the window, to close it.
     var dismissWindow: DismissWindowAction?
 
-    /// Nothing is started while a session is starting, running, or stopping.
-    var isPossible: Bool { controller.state == .idle }
+    /// Nothing is started while a session is starting, running, or stopping, or while setup
+    /// checks it can hear the Mac.
+    var isPossible: Bool { controller.state == .idle && !controller.checkingSystemAudio }
 
     func setUpModels() {
-        navigation.settingsTab = .models
-        openSettings()
-        NSApp.activate()
+        navigation.setupRequested = .models
     }
 
     func callAsFunction() async {
@@ -58,7 +56,6 @@ struct StartListeningCommands: Commands {
     let controller: SessionController
     let navigation: Navigation
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some Commands {
@@ -69,7 +66,7 @@ struct StartListeningCommands: Commands {
             } else {
                 let start = StartListening(
                     controller: controller, navigation: navigation, openWindow: openWindow,
-                    openSettings: openSettings, dismissWindow: dismissWindow)
+                    dismissWindow: dismissWindow)
                 Button("Start Listening") { Task { await start() } }
                     .keyboardShortcut("n")
                     .disabled(!start.isPossible)
@@ -85,13 +82,12 @@ struct StartListeningRow: View {
     @Environment(SessionController.self) private var controller
     @Environment(Navigation.self) private var navigation
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
         let start = StartListening(
             controller: controller, navigation: navigation, openWindow: openWindow,
-            openSettings: openSettings, dismissWindow: dismissWindow)
+            dismissWindow: dismissWindow)
         Button {
             Task { await start() }
         } label: {
@@ -100,5 +96,6 @@ struct StartListeningRow: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(.red)
+        .disabled(!start.isPossible)
     }
 }
