@@ -17,12 +17,12 @@ Earshot lives in the menu bar of Apple silicon Macs running macOS 26.4 or newer.
 
 1. [Download the latest DMG](https://github.com/gabrielcosi/earshot/releases/latest) and open it.
 2. Drag `Earshot.app` into Applications, then launch it.
-3. Earshot opens **Settings > Models**. Download a transcription model, and a speaker detection model if you want speakers.
+3. Earshot opens a short setup. It downloads the speech models (about 850 MB from Hugging Face), checks that it can hear your Mac with a test ding, and lets you pick your options. **Show Welcome…** in **Settings > General** runs it again.
 
-The first time you start listening, macOS asks for two permissions:
+macOS asks for two permissions, during setup or the first time you start listening:
 
-- **Microphone** lets Earshot transcribe what you say. It is only needed while **Include my microphone** is on.
-- **System Audio Recording** lets Earshot hear the other side of the call, from whatever app plays it.
+- **Microphone** lets Earshot transcribe what you say. It is only needed while **Include my microphone** is on. Setup asks only when you click **Allow Microphone**.
+- **System Audio Recording** lets Earshot hear the other side of the call, from whatever app plays it. Setup's **Play the Ding** asks for it and checks that Earshot hears the ding.
 
 Earshot checks for signed updates automatically. Use **Check for Updates…** in the Earshot menu or in **Settings > About** to check now.
 
@@ -50,13 +50,13 @@ Audio never leaves your Mac. Recognition, speaker detection, and translation all
 
 Earshot goes online for three things:
 
-- **Models** download from Hugging Face when you choose them in **Settings > Models**.
+- **Models** download from Hugging Face when you choose them in setup or in **Settings > Models**.
 - **Updates** are checked against this repository's GitHub releases.
 - **Summaries**, only when you choose an OpenAI-compatible or Anthropic endpoint instead of Apple Intelligence. The transcript text is then sent to that endpoint. Its API key is kept in your keychain.
 
 ## Troubleshooting
 
-**The other side of the call is missing.** Check that Earshot is allowed under **System Settings > Privacy & Security > Screen & System Audio Recording**.
+**The other side of the call is missing.** Check that Earshot is allowed under **System Settings > Privacy & Security > Screen & System Audio Recording**, then run **Show Welcome…** in **Settings > General** and play the ding.
 
 **Every line appears twice, once as "Me".** Without headphones, the microphone hears the other side of the call through the speakers. Use headphones, or turn on **Cancel speaker echo** in **Settings > Microphone** when you listen on speakers. When you are only listening, turn off **Include my microphone**.
 

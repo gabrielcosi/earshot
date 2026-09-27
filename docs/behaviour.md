@@ -48,6 +48,11 @@ The model has prompts for about 100 locales (the `asr.rnnt.prompt_dictionary` GG
 - **The tap reports the aggregate device's nominal rate, not the rate the audio arrives at.** A private aggregate device defaults to 48 kHz. The output device clocks the audio, so on a 44.1 kHz output the tap delivers 44,100 samples per second labelled as 48 kHz. Measured: on a 44.1 kHz output, the system audio's timestamps ran 8% short of the microphone's over a long recording, the ratio 0.919 = 44.1 / 48. With the aggregate's nominal rate set to the output's rate, `kAudioTapPropertyFormat` reports 44,100 Hz.
 - **The output device can change mid-session**, for example when headphones connect. The tap follows the device it was built on, so `SystemAudioCapture` rebuilds it when the default output device or its nominal rate changes.
 
+## Core Audio: hearing Earshot's own sound
+
+- **The global tap hears what Earshot itself plays.** Setup's check starts the tap sessions use, `CATapDescription(stereoGlobalTapButExcludeProcesses: [])`, and plays the system's Glass sound in Earshot once the tap delivers. The first non-zero sample arrived about 66 ms after the tap's first buffer, well inside the sound's 1.65 s. Measured on macOS 27.0 (26A428) with `mise run test-capture`.
+- **Not yet measured:** whether the System Audio Recording prompt takes Earshot's focus during the first check, which decides whether it runs again on its own, and whether the tap still hears the sound with the output muted or at volume 0.
+
 ## Echo cancellation
 
 Measured with the fixtures played through a Mac's speakers as the remote side, the built-in microphone recording the room, and the process tap's audio as the reference. The bleed sat about 20 dB under the speakers' level and 20 dB above the room's noise, and the engine transcribed all of it.
