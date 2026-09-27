@@ -109,3 +109,10 @@ extension PCM {
         return header + pcm
     }
 }
+
+extension PCM {
+    /// Whether 16 kHz PCM16 holds only exact zeros.
+    public static func isSilent(_ pcm: Data) -> Bool {
+        pcm.allSatisfy { $0 == 0 }
+    }
+}

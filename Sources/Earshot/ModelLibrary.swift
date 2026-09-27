@@ -19,6 +19,8 @@ final class ModelLibrary {
     /// Download progress in 0...1 per repository, present only while downloading.
     private(set) var progress: [String: Double] = [:]
     var lastError: String?
+    /// Repositories whose latest download failed, for setup's own plain message.
+    private(set) var failed: Set<String> = []
 
     var transcription: String {
         didSet { UserDefaults.standard.set(transcription, forKey: "transcriptionModel") }
@@ -54,6 +56,7 @@ final class ModelLibrary {
         guard downloads[model.repo] == nil else { return }
         progress[model.repo] = 0
         lastError = nil
+        failed.remove(model.repo)
         downloads[model.repo] = Task {
             do {
                 try await ModelDownloader.download(
@@ -63,15 +66,27 @@ final class ModelLibrary {
                 }
                 removeOtherRevisions(of: model)
             } catch is CancellationError {
+            } catch let error as URLError where error.code == .cancelled {
+                // Cancel stops URLSession's download with this, not with CancellationError.
             } catch {
                 log.error(
                     "\(model.repo, privacy: .public) download failed: \(error, privacy: .public)")
                 lastError = "\(model.repo): \(error.localizedDescription)"
+                failed.insert(model.repo)
             }
             progress[model.repo] = nil
             downloads[model.repo] = nil
             refresh()
         }
+    }
+
+    /// Free space on the volume the models are written to, as macOS counts it for a download the
+    /// user asked for; nil when the volume does not say. A download is written to a temporary
+    /// file in the container and renamed into place, so a model needs its own size once.
+    var availableCapacity: Int64? {
+        let key = URLResourceKey.volumeAvailableCapacityForImportantUsageKey
+        return try? URL.applicationSupportDirectory.resourceValues(forKeys: [key])
+            .volumeAvailableCapacityForImportantUsage
     }
 
     func cancel(_ model: SpeechModel) {

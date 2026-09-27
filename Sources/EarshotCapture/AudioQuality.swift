@@ -21,6 +21,19 @@ public enum AudioQuality: String, CaseIterable, Sendable {
         }
     }
 
+    /// What an hour of a session with both sides speaking takes on disk. Low was measured on a
+    /// real session. Medium and High were measured on the test fixtures, both sides speaking: 36
+    /// and 43 MB an hour, against Low's 27 on the same audio, and 25 and 32 with the microphone
+    /// off. The fixtures have nothing above 8 kHz, which Medium and High keep, so real audio comes
+    /// out a little larger; both sides speaking without a pause, it measured 47 and 62.
+    public var megabytesPerHour: Int {
+        switch self {
+        case .low: 23
+        case .medium: 35
+        case .high: 45
+        }
+    }
+
     /// For both channels together.
     var bitRate: Int {
         switch self {
