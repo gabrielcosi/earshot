@@ -1,12 +1,12 @@
 [tools]
 cmake = "4.4.3"
-lefthook = "2.1.14"
+lefthook = "2.1.15"
 ninja = "1.13.2"
 "pipx:meson" = "1.12.1"
-oxfmt = "0.70.0"
+oxfmt = "0.71.0"
 periphery = "3.8.0"
 swiftlint = "0.65.1"
-uv = "0.12.18"
+uv = "0.12.21"
 xcbeautify = "3.2.1"
 
 [env]
