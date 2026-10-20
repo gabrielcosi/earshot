@@ -1,13 +1,22 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  // No CI runs here: nothing merges on its own. Check out each PR and run `mise run verify`.
-  extends: ["config:recommended", ":semanticCommits", ":timezone(Europe/Berlin)"],
-  assignees: ["@gabrielcosi"],
+  extends: ["config:recommended", ":semanticCommits", "helpers:pinGitHubActionDigests"],
+  dependencyDashboardTitle: "Renovate Dashboard",
+  assignees: ["gabrielcosi"],
+  configMigration: true,
+  schedule: ["before 6am on monday"],
+  minimumReleaseAge: "3 days",
+  minimumReleaseAgeBehaviour: "timestamp-optional",
+  internalChecksFilter: "strict",
+  prConcurrentLimit: 0,
+  prHourlyLimit: 0,
+  osvVulnerabilityAlerts: true,
+  vulnerabilityAlerts: { addLabels: ["security"] },
   "git-submodules": { enabled: true },
   customManagers: [
     {
-      description: "Libraries the mise tasks build into .deps, pinned by tag and commit",
       customType: "regex",
+      description: "Libraries the mise tasks build into .deps, pinned by tag and commit",
       managerFilePatterns: ["/^\\.mise/config\\.toml$/"],
       matchStrings: [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( registryUrl=(?<registryUrl>\\S+))?\\nversion=(?<currentValue>\\S+)",
@@ -16,10 +25,31 @@
   ],
   packageRules: [
     {
-      description: "Development tools never reach the app; one PR a month",
+      // No CI runs here yet: only development tools merge on their own; check out the rest and verify locally.
       matchManagers: ["mise"],
-      groupName: "development tools",
-      schedule: ["* * 1 * *"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+      automerge: true,
+      automergeType: "pr",
+      platformAutomerge: true,
+      addLabels: ["automerge"],
+    },
+    {
+      description: "Mise tools",
+      matchManagers: ["mise"],
+      matchDepNames: ["!go", "!node"],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "mise tools",
+    },
+    {
+      description: "CI tooling",
+      matchFileNames: [".forgejo/**"],
+      matchDepNames: ["!node"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+      groupName: "CI tooling",
+    },
+    {
+      description: "Development tools never reach the app",
+      matchManagers: ["mise"],
       semanticCommitType: "build",
     },
     {
@@ -33,11 +63,28 @@
       semanticCommitType: "fix",
     },
     {
-      description: "The engine has no releases; follow its main branch weekly",
+      description: "The engine has no releases; follow its main branch",
       matchManagers: ["git-submodules"],
-      schedule: ["* * * * 1"],
       semanticCommitType: "fix",
       commitMessageTopic: "NeMo-Speech.cpp",
     },
+    { matchUpdateTypes: ["major"], addLabels: ["type/major"] },
+    { matchUpdateTypes: ["minor"], addLabels: ["type/minor"] },
+    { matchUpdateTypes: ["patch"], addLabels: ["type/patch"] },
+    { matchUpdateTypes: ["digest"], addLabels: ["type/digest"] },
+    { matchDatasources: ["docker"], addLabels: ["renovate/container"] },
+    { matchManagers: ["helmv3"], addLabels: ["renovate/helm"] },
+    { matchManagers: ["github-actions"], addLabels: ["renovate/github-action"] },
+    {
+      matchManagers: ["custom.regex"],
+      matchDatasources: ["github-releases"],
+      addLabels: ["renovate/github-release"],
+    },
+    { matchManagers: ["terraform"], addLabels: ["renovate/terraform"] },
+    { matchManagers: ["bun", "npm"], addLabels: ["renovate/npm"] },
+    { matchManagers: ["gomod"], addLabels: ["renovate/go"] },
+    { matchManagers: ["mise"], addLabels: ["renovate/mise"] },
+    { matchManagers: ["swift"], addLabels: ["renovate/swift"] },
+    { matchManagers: ["git-submodules"], addLabels: ["renovate/submodule"] },
   ],
 }

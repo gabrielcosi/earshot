@@ -1,0 +1,58 @@
+---
+name: Label Sync
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .forgejo/workflows/label-sync.yaml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ forgejo.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    name: Label Sync
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync labels
+        env:
+          GH_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+          API: ${{ forgejo.api_url }}/repos/${{ forgejo.repository }}
+        run: |-
+          labels=(
+            "type/major|#f6412d|Major version update"
+            "type/minor|#ff9800|Minor version update"
+            "type/patch|#ffec19|Patch version update"
+            "type/digest|#ffec19|Digest update"
+            "automerge|#0e8a16|Renovate will automerge this PR"
+            "security|#d73a4a|Renovate security update"
+            "renovate/mise|#027fa0|Renovate mise tool update"
+            "renovate/swift|#027fa0|Renovate Swift package update"
+            "renovate/submodule|#027fa0|Renovate Git submodule update"
+          )
+
+          existing=$(curl -fsS -H "Authorization: token ${GH_TOKEN}" "${API}/labels?limit=100")
+
+          for entry in "${labels[@]}"; do
+            IFS='|' read -r name color desc <<< "${entry}"
+            payload=$(jq -n --arg n "${name}" --arg c "${color}" --arg d "${desc}" \
+              '{name: $n, color: $c, description: $d}')
+            id=$(jq -r --arg n "${name}" '.[] | select(.name == $n) | .id' <<< "${existing}" | head -1)
+            if [ -n "${id}" ]; then
+              curl -fsS -X PATCH -H "Authorization: token ${GH_TOKEN}" \
+                -H "Content-Type: application/json" "${API}/labels/${id}" -d "${payload}" >/dev/null
+              echo "updated ${name}"
+            else
+              curl -fsS -X POST -H "Authorization: token ${GH_TOKEN}" \
+                -H "Content-Type: application/json" "${API}/labels" -d "${payload}" >/dev/null
+              echo "created ${name}"
+            fi
+          done
