@@ -1,14 +1,16 @@
-From e6b0027d62ba8ddda2cb541ac72daff7426e9d7e Mon Sep 17 00:00:00 2001
+From bbecc6baee6923586d777379561edb81a22ffac1 Mon Sep 17 00:00:00 2001
 From: Gabriel Cosi <contact@gabrielcosi.dev>
 Date: Fri, 25 Sep 2026 11:34:43 +0200
 Subject: [PATCH 2/2] serve: add --exit-with-parent
 
 ---
- app/serve.cpp | 31 ++++++++++++++++++++++++++++++-
- 1 file changed, 30 insertions(+), 1 deletion(-)
+ app/serve.cpp               | 48 ++++++++++++++++++++++++++++++++++---
+ server/http/http_server.cpp |  5 ++++
+ server/http/http_server.h   |  3 +++
+ 3 files changed, 53 insertions(+), 3 deletions(-)
 
 diff --git a/app/serve.cpp b/app/serve.cpp
-index 1b55b86..0c19b74 100644
+index f5d85c2..06e062a 100644
 --- a/app/serve.cpp
 +++ b/app/serve.cpp
 @@ -13,6 +13,9 @@
@@ -33,7 +35,7 @@ index 1b55b86..0c19b74 100644
      bool http_threads_set = false;
  #if defined(NEMO_SPEECH_CLI_ASR)
      nemo_speech::asr::RecognizerConfig asr_config;
-@@ -336,6 +344,13 @@ run_server(int argc, char** argv) {
+@@ -337,6 +345,17 @@ run_server(int argc, char** argv) {
              server_config.enable_playground = false;
          else if (arg == "--open")
              open_browser = true;
@@ -42,12 +44,16 @@ index 1b55b86..0c19b74 100644
 +            throw std::invalid_argument("--exit-with-parent is not supported on Windows");
 +#else
 +            exit_with_parent = true;
++            // The parent exited before `parent` was read, and launchd adopted this process.
++            if (parent == 1)
++                throw std::runtime_error(
++                    "--exit-with-parent: the parent process has already exited");
 +#endif
 +        }
          else if (arg == "--gpu") {
              gpu = parse_int(value(i, arg), arg, -1, 1024);
              device_name = gpu < 0 ? "cpu" : "gpu:" + std::to_string(gpu);
-@@ -634,9 +649,22 @@ run_server(int argc, char** argv) {
+@@ -673,13 +692,35 @@ run_server(int argc, char** argv) {
          std::signal(SIGINT, old_int);
          std::signal(SIGTERM, old_term);
      });
@@ -59,6 +65,7 @@ index 1b55b86..0c19b74 100644
 +#else
 +    auto parent_exited = [] { return false; };
 +#endif
++    std::atomic<bool> serving_done{false};
      std::thread shutdown_watcher([&] {
 -        while (!shutdown_requested.load(std::memory_order_relaxed))
 +        while (!shutdown_requested.load(std::memory_order_relaxed)) {
@@ -67,11 +74,25 @@ index 1b55b86..0c19b74 100644
 +                break;
 +            }
              std::this_thread::sleep_for(std::chrono::milliseconds(50));
+-        if (http_server)
+-            http_server->stop();
 +        }
-         if (http_server)
-             http_server->stop();
++        // httplib ignores stop() until it serves, so a shutdown asked for while the server
++        // binds or starts waits for it to serve, or for serving to end without it.
++        while (http_server && !serving_done.load(std::memory_order_relaxed)) {
++            if (http_server->running()) {
++                http_server->stop();
++                break;
++            }
++            std::this_thread::sleep_for(std::chrono::milliseconds(50));
++        }
      });
-@@ -721,6 +749,7 @@ print_serve_help(const char* program) {
+     ScopeExit join_shutdown_watcher([&] {
++        serving_done.store(true, std::memory_order_relaxed);
+         shutdown_requested.store(true, std::memory_order_relaxed);
+         if (shutdown_watcher.joinable())
+             shutdown_watcher.join();
+@@ -761,6 +802,7 @@ print_serve_help(const char* program) {
          "  --tls-cert FILE         TLS certificate (requires --tls-key)\n"
          "  --tls-key FILE          TLS private key\n"
          "  --no-ui                 Disable the browser playground\n"
@@ -79,6 +100,34 @@ index 1b55b86..0c19b74 100644
          "  --open                  Open the playground in the default browser\n"
          "  --http.* VALUE          Override any HTTP listener setting\n"
          "                          Realtime ASR: /v1/audio/transcriptions/realtime\n"
+diff --git a/server/http/http_server.cpp b/server/http/http_server.cpp
+index f87d464..591e348 100644
+--- a/server/http/http_server.cpp
++++ b/server/http/http_server.cpp
+@@ -1380,4 +1380,9 @@ Server::stop() {
+     impl_->server->stop();
+ }
+ 
++bool
++Server::running() const {
++    return impl_->server->is_running();
++}
++
+ }  // namespace nemo_speech::http
+diff --git a/server/http/http_server.h b/server/http/http_server.h
+index ad67c6b..6e07126 100644
+--- a/server/http/http_server.h
++++ b/server/http/http_server.h
+@@ -44,6 +44,9 @@ class Server {
+     Server(const Server&) = delete;
+     Server& operator=(const Server&) = delete;
+ 
++    // True while listen_after_bind() serves; stop() has no effect before then.
++    bool running() const;
++
+     // Blocks until stop() is called or the listening socket fails.
+     bool listen();
+     bool bind();
 -- 
 2.49.0
 
