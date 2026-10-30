@@ -1,16 +1,16 @@
-From 3b4bc59e6aa192c76b84b8389c53b6d7c40cc1ce Mon Sep 17 00:00:00 2001
+From ec67943fb39a7c6a5581212540001ee4f888c436 Mon Sep 17 00:00:00 2001
 From: Gabriel Cosi <contact@gabrielcosi.dev>
 Date: Fri, 25 Sep 2026 11:34:43 +0200
 Subject: [PATCH 1/2] serve: listen on any free port with --port 0
 
 ---
  app/serve.cpp               | 18 +++++++++++-------
- server/http/http_server.cpp | 13 ++++++++++++-
+ server/http/http_server.cpp | 16 ++++++++++++++--
  server/http/http_server.h   |  2 ++
- 3 files changed, 25 insertions(+), 8 deletions(-)
+ 3 files changed, 27 insertions(+), 9 deletions(-)
 
 diff --git a/app/serve.cpp b/app/serve.cpp
-index b066602..1b55b86 100644
+index ecdc3d1..f5d85c2 100644
 --- a/app/serve.cpp
 +++ b/app/serve.cpp
 @@ -172,7 +172,7 @@ run_server(int argc, char** argv) {
@@ -22,7 +22,7 @@ index b066602..1b55b86 100644
          },
          "HTTP port");
      parser.Register(
-@@ -303,7 +303,7 @@ run_server(int argc, char** argv) {
+@@ -304,7 +304,7 @@ run_server(int argc, char** argv) {
          else if (arg == "--host")
              server_config.address = value(i, arg);
          else if (arg == "--port")
@@ -31,7 +31,7 @@ index b066602..1b55b86 100644
          else if (arg == "--threads") {
              server_config.threads = parse_int(value(i, arg), arg, 1, 1024);
              http_threads_set = true;
-@@ -660,15 +660,16 @@ run_server(int argc, char** argv) {
+@@ -699,15 +699,16 @@ run_server(int argc, char** argv) {
          if (!browser_host.empty() && browser_host.find(':') != std::string::npos &&
              browser_host.front() != '[')
              browser_host = "[" + browser_host + "]";
@@ -51,7 +51,7 @@ index b066602..1b55b86 100644
              if (cli_json()) {
                  nemo_speech::json::Value event(nemo_speech::json::Value::Object{});
                  event["event"] = "listener.ready";
-@@ -679,11 +680,13 @@ run_server(int argc, char** argv) {
+@@ -718,11 +719,13 @@ run_server(int argc, char** argv) {
                      capabilities.emplace_back(capability);
                  event["capabilities"] = std::move(capabilities);
                  std::printf("%s\n", event.dump().c_str());
@@ -59,52 +59,61 @@ index b066602..1b55b86 100644
 +                std::fflush(stdout);
              } else if (!cli_quiet()) {
                  std::printf(
-                     "HTTP API listening on %s://%s:%d\n",
+                     "HTTP API listening on %s://%s:%d (%d workers)\n",
                      server_config.tls_certificate.empty() ? "http" : "https",
--                    server_config.address.c_str(), server_config.port);
-+                    server_config.address.c_str(), http_server->port());
+-                    server_config.address.c_str(), server_config.port, server_config.threads);
++                    server_config.address.c_str(), http_server->port(), server_config.threads);
                  if (server_config.enable_playground)
                      std::printf("Playground: %s\n", playground_url.c_str());
              }
-@@ -705,7 +708,8 @@ print_serve_help(const char* program) {
+@@ -744,7 +747,8 @@ print_serve_help(const char* program) {
          "local paths, indexed names, or through a YAML configuration.\n\n"
          "Server:\n"
          "  --host ADDRESS          Bind address (default: 127.0.0.1)\n"
 -        "  --port N                HTTP port (default: 8080)\n"
 +        "  --port N                HTTP port (default: 8080; 0 picks a free port, reported\n"
 +        "                          in the listener.ready event)\n"
-         "  --threads N             Bounded HTTP worker count (default: 4)\n"
+         "  --threads N             Bounded HTTP worker count (default: 4; with SALM,\n"
+         "                          asr.salm.max_sequences + 8, at least 256)\n"
          "  --max-upload-mb N       Maximum request body (default: 512)\n"
-         "  --read-timeout SEC      Socket read timeout (default: 30)\n"
 diff --git a/server/http/http_server.cpp b/server/http/http_server.cpp
-index c151d3b..56df72f 100644
+index 810dea2..f87d464 100644
 --- a/server/http/http_server.cpp
 +++ b/server/http/http_server.cpp
-@@ -1227,7 +1227,18 @@ Server::listen() {
+@@ -1350,14 +1350,26 @@ Server::listen() {
  
  bool
  Server::bind() {
--    return impl_->server->bind_to_port(impl_->config.address, impl_->config.port);
-+    if (impl_->config.port != 0)
-+        return impl_->server->bind_to_port(impl_->config.address, impl_->config.port);
-+    const int port = impl_->server->bind_to_any_port(impl_->config.address);
-+    if (port < 0)
-+        return false;
-+    impl_->config.port = port;
-+    return true;
-+}
-+
+-    if (!impl_->server->bind_to_port(impl_->config.address, impl_->config.port))
+-        return false;
++    if (impl_->config.port != 0) {
++        if (!impl_->server->bind_to_port(impl_->config.address, impl_->config.port))
++            return false;
++    } else {
++        const int port = impl_->server->bind_to_any_port(impl_->config.address);
++        if (port < 0)
++            return false;
++        impl_->config.port = port;
++    }
+     // httplib listens with a backlog of 5 pending connections: a burst of clients beyond that is
+     // reset before a worker sees it. Queue as many as the server has workers (Linux caps it at
+     // net.core.somaxconn); listening again on a listening socket changes only its backlog.
+     return ::listen(impl_->listen_socket, std::max(5, impl_->config.threads)) == 0;
+ }
+ 
 +int
 +Server::port() const {
 +    return impl_->config.port;
- }
- 
++}
++
  bool
+ Server::listen_after_bind() {
+     return impl_->server->listen_after_bind();
 diff --git a/server/http/http_server.h b/server/http/http_server.h
-index de69b4b..4c7f63a 100644
+index d3445bf..ad67c6b 100644
 --- a/server/http/http_server.h
 +++ b/server/http/http_server.h
-@@ -44,6 +44,8 @@ class Server {
+@@ -48,6 +48,8 @@ class Server {
      bool listen();
      bool bind();
      bool listen_after_bind();

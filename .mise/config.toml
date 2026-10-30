@@ -93,7 +93,7 @@ description = "Build the nemo-speech server (Metal, ASR + diarization + HTTP) in
 depends = ["engine:sentencepiece", "engine:aec"]
 run = '''
 cd "$EARSHOT_ENGINE"
-git submodule update --init ggml third_party/cpp-httplib llama.cpp
+git submodule update --init third_party/cpp-httplib llama.cpp
 # Earshot's changes to the engine.
 for patch in "{{config_root}}"/patches/nemo-speech/*.patch; do
   git apply --reverse --check "$patch" 2>/dev/null || git apply "$patch"
@@ -105,6 +105,8 @@ scripts/configure.sh metal-asr \
   -DSENTENCEPIECE_INCLUDE_DIR="$EARSHOT_DEPS/sentencepiece/include" \
   -DCMAKE_INSTALL_PREFIX="$EARSHOT_DEPS/engine"
 cmake --build --preset metal-asr
+# Into an empty prefix, so the bundle never carries libraries an earlier engine version installed.
+rm -rf "$EARSHOT_DEPS/engine"
 cmake --install build/metal-asr
 '''
 
@@ -221,7 +223,8 @@ cp THIRD_PARTY_NOTICES.md "$licenses/Third-party notices.md"
 cp "$EARSHOT_ENGINE/LICENSE" "$licenses/NeMo-Speech.cpp.txt"
 cp "$EARSHOT_ENGINE/NOTICE" "$licenses/NeMo-Speech.cpp NOTICE.txt"
 cp "$EARSHOT_ENGINE/THIRD_PARTY_NOTICES.md" "$licenses/NeMo-Speech.cpp third-party notices.md"
-cp "$EARSHOT_ENGINE/ggml/LICENSE" "$licenses/ggml.txt"
+# ggml is developed inside llama.cpp, whose LICENSE is ggml's.
+cp "$EARSHOT_ENGINE/llama.cpp/LICENSE" "$licenses/ggml.txt"
 cp "$EARSHOT_ENGINE/third_party/cpp-httplib/LICENSE" "$licenses/cpp-httplib.txt"
 cp "$EARSHOT_DEPS/src/sentencepiece/LICENSE" "$licenses/SentencePiece.txt"
 cp .build/artifacts/sparkle/Sparkle/LICENSE "$licenses/Sparkle.txt"
