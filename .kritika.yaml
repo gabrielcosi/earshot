@@ -1,0 +1,63 @@
+---
+# yaml-language-server: $schema=https://kritika.home-operations.com/kritika.schema.json
+review:
+  model: bifrost/anthropic/claude-sonnet-5-5
+  fallback: bifrost/opencode/deepseek-v4.1-flash
+  effort: high
+  approve: true
+  agents:
+    - name: deps
+      model: bifrost/opencode/deepseek-v4.1-flash
+      when:
+        - { name: renovate, expr: pr.bot }
+    - name: deep
+      model: bifrost/anthropic/claude-opus-5-5
+      effort: high
+      when:
+        - name: engine
+          expr: pr.lines > 50
+          paths:
+            - "config/server.yaml"
+            - "patches/nemo-speech/**"
+            - "Sources/CEchoCanceller/**"
+            - "Sources/EarshotCapture/**"
+            - "Sources/EarshotKit/Realtime*.swift"
+        - name: store
+          expr: pr.lines > 50
+          paths:
+            - "Sources/EarshotKit/StoreRecords.swift"
+            - "Sources/EarshotKit/TranscriptMigration.swift"
+            - "Sources/EarshotKit/TranscriptStore*.swift"
+            - "Sources/Earshot/SessionController+Migration.swift"
+            - "Sources/Earshot/SessionController+Store.swift"
+        - name: security
+          paths:
+            - "Support/*.entitlements"
+            - "Support/Info.plist"
+            - "Sources/EarshotKit/EngineEndpoint.swift"
+            - "Sources/EarshotKit/EngineLaunch.swift"
+            - "Sources/Earshot/EngineServer.swift"
+            - "Sources/Earshot/Keychain.swift"
+            - "Sources/Earshot/Updater.swift"
+        - name: large
+          expr: pr.lines > 1500
+confidence:
+  model: bifrost/anthropic/claude-sonnet-5-5
+  threshold: 4
+  gate:
+    when:
+      - { name: renovate, expr: pr.bot }
+context:
+  - path: AGENTS.md
+    description: Working rules, code standard, tooling, layout and how to test
+  - path: docs/adr/README.md
+    description: Index of the architecture decisions
+  - path: docs/behaviour.md
+    description: What the engine, Core Audio and Apple's frameworks do, established by experiment
+    paths:
+      - "config/server.yaml"
+      - "patches/nemo-speech/**"
+      - "Sources/EarshotCapture/**"
+      - "Sources/EarshotKit/Realtime*.swift"
+      - "Sources/Earshot/Translator.swift"
+      - "Sources/Earshot/TranslationLog.swift"
