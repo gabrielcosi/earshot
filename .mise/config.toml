@@ -23,8 +23,8 @@ _.path = [
   "{{config_root}}/.build/artifacts/sparkle/Sparkle/bin",
 ]
 
-[settings]
-unix_default_inline_shell_args = "bash -c -o errexit -o pipefail -o nounset"
+[task_config]
+shell = "bash -euo pipefail -c"
 
 [tasks."engine:sentencepiece"]
 description = "Build static SentencePiece into .deps (pinned to the engine's commit)"
