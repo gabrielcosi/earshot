@@ -205,10 +205,11 @@ struct MenuBarLabel: View {
     }
 
     /// While listening, and after a session that ended on its own, with why, until ✕, the next
-    /// start, or its problems are dismissed.
+    /// start, or its problems are dismissed. A session the user stops hides it at once, while it
+    /// finishes.
     private var showsCaptions: Bool {
         controller.preferences.showsCaptions && !controller.captionsDismissed
-            && (controller.state != .idle
+            && (controller.state == .starting || controller.isRecording
                 || controller.endedOnItsOwn
                     && controller.problems.all.contains(where: \.endsWithSession))
     }
