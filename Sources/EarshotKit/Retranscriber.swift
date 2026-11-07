@@ -98,10 +98,12 @@ public enum Retranscriber {
     ) async throws -> (
         words: [Word], language: String?
     ) {
-        let request = Multipart.request(
-            engine.request("v1/audio/transcriptions"),
-            fields: fields(language: language, contexts: contexts), wav: PCM.wav(pcm))
-        let (data, response) = try await URLSession.shared.upload(for: request.0, from: request.1)
+        var base = engine.request("v1/audio/transcriptions")
+        base.timeoutInterval = EngineEndpoint.timeout(
+            forAudioSeconds: Double(pcm.count) / Double(PCM.bytesPerSecond))
+        let (request, body) = Multipart.request(
+            base, fields: fields(language: language, contexts: contexts), wav: PCM.wav(pcm))
+        let (data, response) = try await URLSession.shared.upload(for: request, from: body)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { return ([], nil) }
         let decoded = try JSONDecoder().decode(Response.self, from: data)
         return (decoded.words ?? [], decoded.language)

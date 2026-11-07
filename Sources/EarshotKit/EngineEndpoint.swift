@@ -20,3 +20,13 @@ public struct EngineEndpoint: Sendable {
         return request
     }
 }
+
+extension EngineEndpoint {
+    /// For a request over a recording. The engine answers only once it is done, and URLSession
+    /// gives up after 60 s without a byte (its default `timeoutIntervalForRequest`), which a
+    /// 43-minute diarization once outlasted at 81 s. A quarter of the audio's length is ample
+    /// for the engine's slowest pass and still ends a request to an engine that has hung.
+    static func timeout(forAudioSeconds seconds: Double) -> TimeInterval {
+        max(60, seconds / 4)
+    }
+}

@@ -261,11 +261,29 @@ import Testing
         #expect(receiver.received == [1, 2, 3, 4])
     }
 
-    @Suite struct DiarizerModeTests {
-        @Test func fullAttentionUpToItsLimitAndStreamingBeyond() {
-            #expect(Diarizer.mode(forSeconds: 60) == "offline")
-            #expect(Diarizer.mode(forSeconds: Diarizer.offlineLimit) == "offline")
-            #expect(Diarizer.mode(forSeconds: Diarizer.offlineLimit + 1) == "streaming")
+    @Suite struct DiarizerTests {
+        /// Past the limit, the model's long-chunk geometry rather than the live stream's.
+        @Test func fullAttentionUpToItsLimitAndLongChunkStreamingBeyond() {
+            #expect(Diarizer.fields(forSeconds: 60) == ["mode": "offline"])
+            #expect(Diarizer.fields(forSeconds: Diarizer.offlineLimit) == ["mode": "offline"])
+            #expect(
+                Diarizer.fields(forSeconds: Diarizer.offlineLimit + 1)
+                    == ["mode": "streaming", "geometry": "offline"])
+        }
+
+        /// A refused request is a failed relabelling, not a recording in which nobody spoke.
+        @Test func anEngineErrorThrowsRatherThanReturningNoTurns() {
+            #expect(throws: Diarizer.Failure.self) {
+                try Diarizer.turns(in: Data(#"{"error":{"message":"busy"}}"#.utf8), status: 500)
+            }
+        }
+
+        /// The engine sends nothing until it is done, and URLSession gives up after 60 s without
+        /// a byte: a long recording's request would fail while the engine was still working.
+        @Test func longerAudioGetsALongerTimeout() {
+            #expect(EngineEndpoint.timeout(forAudioSeconds: 5) == 60)
+            #expect(EngineEndpoint.timeout(forAudioSeconds: 240) == 60)
+            #expect(EngineEndpoint.timeout(forAudioSeconds: 2_600) == 650)
         }
     }
 

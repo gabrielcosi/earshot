@@ -334,4 +334,14 @@ struct LiveEngineTests {
         #expect((turns.last?.end ?? 0) > Diarizer.offlineLimit)
     }
 
+    /// Past the offline limit, Diarizer asks for the long-chunk geometry; an engine that ignored
+    /// the field would diarize at the live geometry, about 17 times slower, and accept any value.
+    @Test func theEngineReadsTheDiarizationGeometry() async throws {
+        let (request, body) = Multipart.request(
+            Self.engine.request("v1/audio/diarizations"),
+            fields: ["mode": "streaming", "geometry": "unknown"], wav: PCM.wav(Data(count: 32_000)))
+        let (_, response) = try await URLSession.shared.upload(for: request, from: body)
+        #expect((response as? HTTPURLResponse)?.statusCode == 400)
+    }
+
 }

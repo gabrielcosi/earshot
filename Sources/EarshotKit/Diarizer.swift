@@ -6,19 +6,33 @@ public enum Diarizer {
     /// minutes (`pos_emb_max_len` in the engine's diarizer); longer audio makes it fail.
     public static let offlineLimit = 5_000 * 0.08
 
-    /// Full attention places turns best; past its limit the engine's streaming diarizer, meant
-    /// for long-form audio, covers the whole recording instead.
-    public static func mode(forSeconds seconds: Double) -> String {
-        seconds <= offlineLimit ? "offline" : "streaming"
+    /// The engine's error, as it answered the request.
+    enum Failure: Error {
+        case http(Int, String)
+    }
+
+    /// Full attention places turns best. Past its limit, the streaming diarizer covers the whole
+    /// recording, with the model's long-chunk geometry rather than the live stream's
+    /// low-latency one, which is many times slower (docs/behaviour.md, Engine: diarization).
+    static func fields(forSeconds seconds: Double) -> [String: String] {
+        seconds <= offlineLimit
+            ? ["mode": "offline"] : ["mode": "streaming", "geometry": "offline"]
     }
 
     public static func diarize(pcm: Data, engine: EngineEndpoint) async throws -> [SpeakerTurn] {
+        let seconds = Double(pcm.count) / Double(PCM.bytesPerSecond)
+        var base = engine.request("v1/audio/diarizations")
+        base.timeoutInterval = EngineEndpoint.timeout(forAudioSeconds: seconds)
         let (request, body) = Multipart.request(
-            engine.request("v1/audio/diarizations"),
-            fields: ["mode": mode(forSeconds: Double(pcm.count) / Double(PCM.bytesPerSecond))],
-            wav: PCM.wav(pcm))
+            base, fields: fields(forSeconds: seconds), wav: PCM.wav(pcm))
         let (data, response) = try await URLSession.shared.upload(for: request, from: body)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [] }
+        return try turns(in: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+    }
+
+    static func turns(in data: Data, status: Int) throws -> [SpeakerTurn] {
+        guard status == 200 else {
+            throw Failure.http(status, String(bytes: data, encoding: .utf8) ?? "")
+        }
         return try JSONDecoder().decode(Response.self, from: data).segments
     }
 

@@ -1,0 +1,187 @@
+From d81564d837fda7d6a54f2fd41b6edaa3f9c8fc38 Mon Sep 17 00:00:00 2001
+From: Gabriel Cosi <contact@gabrielcosi.dev>
+Date: Sat, 7 Nov 2026 11:29:12 +0100
+Subject: [PATCH] server: choose the diarizer geometry per request
+
+POST /v1/audio/diarizations takes an optional geometry field, streaming
+or offline, resolved for the loaded model's version. A client can
+diarize a whole recording with the long-chunk geometry while the
+realtime stream keeps the server's low-latency one: on a 43-minute
+recording with a V3 model, 4.8 s instead of 81 s.
+---
+ docs/api.md                       | 11 ++++++++---
+ server/http/http_server.cpp       | 10 +++++++++-
+ src/asr/diar/aosc_state.cpp       |  7 +++++++
+ src/asr/diar/aosc_state.h         |  3 +++
+ src/asr/diar/diarizer.cpp         | 10 ++++++++++
+ src/asr/diar/diarizer.h           |  6 ++++++
+ tests/cpp/asr/test_diar_state.cpp | 21 +++++++++++++++++++++
+ 7 files changed, 64 insertions(+), 4 deletions(-)
+
+diff --git a/docs/api.md b/docs/api.md
+index faf1735..9b8bcfd 100644
+--- a/docs/api.md
++++ b/docs/api.md
+@@ -343,14 +343,19 @@ Speaker segmentation without transcription. Alias: `/v1/diarizations`.
+ |---|---|---|---|
+ | `file` | WAV upload | required | audio to segment |
+ | `mode` | string | `streaming` | `streaming` for long-form audio, or full-attention `offline` for recordings up to about 6.6 minutes |
++| `geometry` | string | the server's diarizer geometry | for `mode=streaming`: the loaded model's `streaming` or long-chunk `offline` geometry (`v3-streaming` or `v3-offline` on V3, `streaming` or `offline` on V2) |
+ 
+ Response: `{"segments": [{"start": s, "end": s, "speaker": n}]}` (1-based
+ speaker ids).
+ 
+ Request `mode=offline` uses full attention. It is distinct from
+-`diar.preset: offline`, which still uses the streaming path.
++`diar.preset: offline` and `geometry=offline`, which still use the streaming path
++with longer chunks: much faster than the low-latency default on a whole
++recording. Unlike `diar.preset`, whose names are fixed presets (`offline` is
++the V2 one even on V3), `geometry` follows the loaded model's version. It is
++ignored with `mode=offline`.
+ 
+ Without a diarization model, a speech-LLM (SALM) model answers
+ with its encoder's speaker branch and no transcript: the 10 ms speaker turns its
+-word timestamps carry (activity above 0.5), whatever the `mode`. It needs the
+-CTC timestamp head, like word timestamps.
++word timestamps carry (activity above 0.5), whatever the `mode` and `geometry`.
++It needs the CTC timestamp head, like word timestamps.
+diff --git a/server/http/http_server.cpp b/server/http/http_server.cpp
+index 591e348..f839cdf 100644
+--- a/server/http/http_server.cpp
++++ b/server/http/http_server.cpp
+@@ -1055,6 +1055,11 @@ struct Server::Impl {
+                 request.form.has_field("mode") ? request.form.get_field("mode") : "streaming";
+             if (mode != "streaming" && mode != "offline")
+                 throw std::invalid_argument("mode must be streaming or offline");
++            // The geometry of a streaming pass; the server's configured one when absent.
++            const std::string geometry =
++                request.form.has_field("geometry") ? request.form.get_field("geometry") : "";
++            if (!geometry.empty() && geometry != "streaming" && geometry != "offline")
++                throw std::invalid_argument("geometry must be streaming or offline");
+             Value root(Value::Object{});
+             Value::Array output;
+             const auto segment_item = [&](double start, double end, int speaker) {
+@@ -1085,7 +1090,10 @@ struct Server::Impl {
+                     throw;
+             }
+             if (engine) {
+-                const auto result = engine->diarize(
++                const auto diarizer = geometry.empty()
++                                          ? *engine
++                                          : engine->with_geometry(engine->model_geometry(geometry));
++                const auto result = diarizer.diarize(
+                     source.samples.data(), source.samples.size(), source.sample_rate,
+                     mode == "offline" ? asr::DiarizationMode::Offline
+                                       : asr::DiarizationMode::Streaming);
+diff --git a/src/asr/diar/aosc_state.cpp b/src/asr/diar/aosc_state.cpp
+index 797a40d..03ebd4a 100644
+--- a/src/asr/diar/aosc_state.cpp
++++ b/src/asr/diar/aosc_state.cpp
+@@ -196,6 +196,13 @@ DiarGeometry::preset(const std::string& name) {
+         "' (expected streaming | offline | v3-streaming | v3-offline)");
+ }
+ 
++DiarGeometry
++DiarGeometry::for_model(const std::string& name, bool is_v3) {
++    if (name != "streaming" && name != "offline")
++        throw std::invalid_argument("diarizer geometry must be streaming or offline");
++    return preset(is_v3 ? "v3-" + name : name);
++}
++
+ void
+ DiarGeometry::validate(int n_spk, int sil_frames_per_spk, int pos_emb_max_len) const {
+     auto fail = [](const std::string& msg) {
+diff --git a/src/asr/diar/aosc_state.h b/src/asr/diar/aosc_state.h
+index f0532ef..999b4bd 100644
+--- a/src/asr/diar/aosc_state.h
++++ b/src/asr/diar/aosc_state.h
+@@ -42,6 +42,9 @@ struct DiarGeometry {
+     DiarGeometry resolved(bool is_v3) const;
+     // Throws std::invalid_argument for unknown names.
+     static DiarGeometry preset(const std::string& name);
++    // A model version's own "streaming" or "offline" preset: v3-streaming or
++    // v3-offline on V3. Throws std::invalid_argument for other names.
++    static DiarGeometry for_model(const std::string& name, bool is_v3);
+ 
+     // Validates positive chunk/update sizes, non-negative contexts and FIFO,
+     // the minimum speaker-cache budget, and the positional-encoding limit.
+diff --git a/src/asr/diar/diarizer.cpp b/src/asr/diar/diarizer.cpp
+index 610812c..09ca8a0 100644
+--- a/src/asr/diar/diarizer.cpp
++++ b/src/asr/diar/diarizer.cpp
+@@ -179,6 +179,16 @@ Diarizer::streaming_diarize() const {
+     return std::make_unique<DiarizationStream>(model_, geometry_);
+ }
+ 
++DiarGeometry
++Diarizer::model_geometry(const std::string& name) const {
++    return DiarGeometry::for_model(name, model_->cfg().is_v3());
++}
++
++Diarizer
++Diarizer::with_geometry(DiarGeometry geometry) const {
++    return Diarizer(model_, std::move(geometry));
++}
++
+ int
+ Diarizer::sample_rate() const {
+     return model_->cfg().sample_rate;
+diff --git a/src/asr/diar/diarizer.h b/src/asr/diar/diarizer.h
+index fcac962..b980dd0 100644
+--- a/src/asr/diar/diarizer.h
++++ b/src/asr/diar/diarizer.h
+@@ -61,6 +61,12 @@ class Diarizer {
+         const DiarSegmentationCfg& segmentation = {}) const;
+     std::unique_ptr<DiarizationStream> streaming_diarize() const;
+ 
++    // The loaded model's "streaming" or "offline" geometry (DiarGeometry::for_model).
++    DiarGeometry model_geometry(const std::string& name) const;
++    // A diarizer on the same model with another streaming geometry, such as one
++    // for a single request. Throws std::invalid_argument if it is invalid.
++    Diarizer with_geometry(DiarGeometry geometry) const;
++
+     int sample_rate() const;
+     int num_speakers() const;
+     double seconds_per_frame() const;
+diff --git a/tests/cpp/asr/test_diar_state.cpp b/tests/cpp/asr/test_diar_state.cpp
+index 2c3e410..240cb36 100644
+--- a/tests/cpp/asr/test_diar_state.cpp
++++ b/tests/cpp/asr/test_diar_state.cpp
+@@ -151,6 +151,26 @@ test_geometry_and_word_cadence() {
+     require(model.word_anchor_frames() == 16, "V3 word anchor must be sixteen frames");
+ }
+ 
++void
++test_model_geometry() {
++    auto g = DiarGeometry::for_model("streaming", false);
++    require(g.chunk_len == 20 && g.spkcache_len == 160, "V2 streaming is riva streaming");
++    g = DiarGeometry::for_model("offline", false);
++    require(g.chunk_len == 100 && g.spkcache_len == 312, "V2 offline is riva offline");
++    g = DiarGeometry::for_model("streaming", true);
++    require(g.chunk_len == 13 && g.fifo_len == 80, "V3 streaming is v3 streaming");
++    g = DiarGeometry::for_model("offline", true);
++    require(g.chunk_len == 264 && g.fifo_len == 0, "V3 offline is v3 offline");
++    bool threw = false;
++    try {
++        DiarGeometry::for_model("v3-offline", true);
++    }
++    catch (const std::invalid_argument&) {
++        threw = true;
++    }
++    require(threw, "only streaming and offline name a model's geometry");
++}
++
+ void
+ test_finite_parity() {
+     const float nan = std::numeric_limits<float>::quiet_NaN();
+@@ -274,6 +294,7 @@ main() {
+     }
+     test_birth_gate_settled_frames();
+     test_geometry_and_word_cadence();
++    test_model_geometry();
+     test_finite_parity();
+     test_invalid_rotary_geometry();
+     test_buffer_compaction();
+-- 
+2.49.0
+
