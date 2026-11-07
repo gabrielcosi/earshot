@@ -10,8 +10,8 @@ extension Transcript {
     /// turn with words are speech the diarizer did not call a turn (an intro over music,
     /// crosstalk), or a turn whose own audio came back empty; they stay, under that turn's
     /// speaker or else an unknown one. The microphone's paragraphs stay as they are. When no
-    /// turn holds words (there are none, or the second pass failed), nothing changes and it
-    /// returns false.
+    /// turn holds words (there are none, or none had speech, as in a recording of only music),
+    /// nothing changes and it returns false.
     @discardableResult
     public mutating func relabel(_ turns: [TranscribedTurn]) -> Bool {
         let heard = turns.filter { !$0.words.isEmpty }

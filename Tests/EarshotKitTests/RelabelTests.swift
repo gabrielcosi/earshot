@@ -91,8 +91,8 @@ import Testing
         #expect(transcript.utterances.map(\.speaker) == [.unknown, .remote(slot: 2)])
     }
 
-    /// No turn's own audio holding words means the second pass failed, so nothing is rebuilt:
-    /// the speech outside every turn keeps its live speaker too, and the caller is told.
+    /// No turn's own audio holding words, as in a recording of only music, rebuilds nothing: the
+    /// speech outside every turn keeps its live speaker too, and the caller is told.
     @Test func noWordsInAnyTurnKeepsTheLiveTranscript() {
         var transcript = Transcript()
         transcript.applyFinal(

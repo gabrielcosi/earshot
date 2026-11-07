@@ -6,11 +6,6 @@ public enum Diarizer {
     /// minutes (`pos_emb_max_len` in the engine's diarizer); longer audio makes it fail.
     public static let offlineLimit = 5_000 * 0.08
 
-    /// The engine's error, as it answered the request.
-    enum Failure: Error {
-        case http(Int, String)
-    }
-
     /// Full attention places turns best. Past its limit, the streaming diarizer covers the whole
     /// recording, with the model's long-chunk geometry rather than the live stream's
     /// low-latency one, which is many times slower (docs/behaviour.md, Engine: diarization).
@@ -30,10 +25,9 @@ public enum Diarizer {
     }
 
     static func turns(in data: Data, status: Int) throws -> [SpeakerTurn] {
-        guard status == 200 else {
-            throw Failure.http(status, String(bytes: data, encoding: .utf8) ?? "")
-        }
-        return try JSONDecoder().decode(Response.self, from: data).segments
+        try JSONDecoder().decode(
+            Response.self, from: EngineEndpoint.answer(data, status: status)
+        ).segments
     }
 
     private struct Response: Decodable {

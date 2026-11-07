@@ -104,8 +104,12 @@ public enum Retranscriber {
         let (request, body) = Multipart.request(
             base, fields: fields(language: language, contexts: contexts), wav: PCM.wav(pcm))
         let (data, response) = try await URLSession.shared.upload(for: request, from: body)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { return ([], nil) }
-        let decoded = try JSONDecoder().decode(Response.self, from: data)
+        return try heard(in: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+    }
+
+    static func heard(in data: Data, status: Int) throws -> (words: [Word], language: String?) {
+        let decoded = try JSONDecoder().decode(
+            Response.self, from: EngineEndpoint.answer(data, status: status))
         return (decoded.words ?? [], decoded.language)
     }
 

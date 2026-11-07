@@ -29,9 +29,9 @@ extension SessionController {
             let transcribed = try await Retranscriber.transcribe(
                 turns: turns, pcm: pcm, engine: endpoint, allowed: spokenLanguages,
                 contexts: rules.speechContexts)
+            // The engine answered every turn, so none holding words means none had speech.
             guard transcript.relabel(transcribed) || turns.isEmpty else {
-                log.error("no turn's audio came back with words: \(turns.count) turns")
-                problems.report(.speakersNotRelabelled)
+                log.notice("no speech in \(turns.count) turns; the live speakers stay")
                 return
             }
             log.notice(

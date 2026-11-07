@@ -273,9 +273,20 @@ import Testing
 
         /// A refused request is a failed relabelling, not a recording in which nobody spoke.
         @Test func anEngineErrorThrowsRatherThanReturningNoTurns() {
-            #expect(throws: Diarizer.Failure.self) {
+            #expect(throws: EngineEndpoint.Failure.self) {
                 try Diarizer.turns(in: Data(#"{"error":{"message":"busy"}}"#.utf8), status: 500)
             }
+        }
+
+        /// A refused clip is a failed second pass, not a clip in which nobody spoke, which a
+        /// recording of only music or noise gives.
+        @Test func aRefusedTranscriptionThrowsRatherThanReturningNoWords() throws {
+            #expect(throws: EngineEndpoint.Failure.self) {
+                try Retranscriber.heard(
+                    in: Data(#"{"error":{"message":"busy"}}"#.utf8), status: 503)
+            }
+            #expect(
+                try Retranscriber.heard(in: Data(#"{"words":[]}"#.utf8), status: 200).words.isEmpty)
         }
 
         /// The engine sends nothing until it is done, and URLSession gives up after 60 s without

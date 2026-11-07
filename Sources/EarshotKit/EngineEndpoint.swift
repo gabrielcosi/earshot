@@ -22,6 +22,19 @@ public struct EngineEndpoint: Sendable {
 }
 
 extension EngineEndpoint {
+    /// The engine refused an HTTP request, with its status and answer.
+    enum Failure: Error {
+        case http(Int, String)
+    }
+
+    /// The answer to an HTTP request, or the engine's refusal as an error.
+    static func answer(_ data: Data, status: Int) throws -> Data {
+        guard status == 200 else {
+            throw Failure.http(status, String(bytes: data, encoding: .utf8) ?? "")
+        }
+        return data
+    }
+
     /// For a request over a recording. The engine answers only once it is done, and URLSession
     /// gives up after 60 s without a byte (its default `timeoutIntervalForRequest`), which a
     /// 43-minute diarization once outlasted at 81 s. A quarter of the audio's length is ample
