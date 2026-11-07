@@ -247,97 +247,6 @@ public struct Transcript: Sendable, Equatable {
         }
     }
 
-    /// Replaces the remote paragraphs with the speaker turns from diarizing the whole recording,
-    /// each holding the words transcribed from its own audio. Placing the live words into turns by
-    /// their times does not work at a quick turn change: the engine's word times are emission
-    /// times, 0.3-0.5 s after the speech (measured on `say` voices), so a turn's last word lands
-    /// in the next speaker's turn whenever the gap between them is shorter than that. A turn's own
-    /// audio cannot hold another speaker's words. Live words farther than that lag from every
-    /// turn are speech the diarizer did not call a turn (an intro over music, crosstalk); they
-    /// stay, under an unknown speaker. The microphone's paragraphs stay as they are.
-    public mutating func relabel(_ turns: [TranscribedTurn]) {
-        let rebuilt =
-            turns.filter { !$0.words.isEmpty }.map { turn in
-                Self.utterance(
-                    .remote(slot: turn.turn.speaker), start: turn.turn.start, end: turn.turn.end,
-                    words: turn.words, heard: turn.heard)
-            } + missed(by: turns.map(\.turn))
-        guard !rebuilt.isEmpty else { return }
-        let kept = utterances.filter { $0.speaker == .me }
-        utterances = []
-        for utterance in (kept + rebuilt).sorted(by: { $0.start < $1.start }) {
-            insert(utterance)
-        }
-        // Rebuilt paragraphs look their sentences up in the session's outcomes, so what was
-        // translated while listening shows at once; all were on screen as they were heard.
-        for index in utterances.indices {
-            utterances[index].carried = nil
-            utterances[index].translationShown = true
-            textChanged(at: index)
-        }
-    }
-
-    /// The engine's word times trail the speech: starts by 0.2-0.7 s and ends by 0.06-0.34 s
-    /// (measured on `say` voices), so a word's midpoint trails by up to about 0.5 s. A live word
-    /// within that of a turn is the turn's, already transcribed from the turn's audio.
-    static let wordTimeLag = 0.5
-
-    /// Runs of live remote words that no turn accounts for, under an unknown speaker.
-    private func missed(by turns: [SpeakerTurn]) -> [Utterance] {
-        guard !turns.isEmpty else { return [] }
-        var runs: [Run] = []
-        var open = false
-        for word in liveRemoteWords {
-            let middle = (word.start + word.end) / 2
-            let nearest = turns.min { Self.distance(middle, $0) < Self.distance(middle, $1) }
-            guard let nearest, Self.distance(middle, nearest) > Self.wordTimeLag else {
-                open = false
-                continue
-            }
-            let speaker = Speaker.unknown
-            if open, let last = runs.indices.last, runs[last].speaker == speaker {
-                runs[last].end = word.end
-                runs[last].text += " " + word.word
-                runs[last].words.append(word)
-            } else {
-                runs.append(
-                    Run(
-                        speaker: speaker, start: word.start, end: word.end, text: word.word,
-                        words: [word]))
-                open = true
-            }
-        }
-        return runs.map {
-            Self.utterance($0.speaker, start: $0.start, end: $0.end, words: $0.words)
-        }
-    }
-
-    private var liveRemoteWords: [Word] {
-        utterances.flatMap { utterance -> [Word] in
-            guard case .remote = utterance.speaker else { return [] }
-            return utterance.segments.flatMap { segment in
-                segment.words.isEmpty
-                    ? [Word(word: segment.text, start: segment.start, end: segment.end)]
-                    : segment.words
-            }
-        }.filter { !$0.word.isEmpty }.sorted { $0.start < $1.start }
-    }
-
-    private static func utterance(
-        _ speaker: Speaker, start: Double, end: Double, words: [Word], heard: String? = nil
-    ) -> Utterance {
-        var utterance = Utterance(
-            speaker: speaker, start: start, end: end,
-            text: words.map(\.word).joined(separator: " "))
-        utterance.segments[0].words = words
-        utterance.segments[0].heard = heard.map { HeardOutside(language: $0) }
-        return utterance
-    }
-
-    private static func distance(_ time: Double, _ turn: SpeakerTurn) -> Double {
-        time < turn.start ? turn.start - time : max(0, time - turn.end)
-    }
-
     private static func distance(_ time: Double, _ span: SegmentSpan) -> Double {
         time < span.start ? span.start - time : max(0, time - span.end)
     }
@@ -355,7 +264,7 @@ public struct Transcript: Sendable, Equatable {
     /// until someone else speaks, however long the pauses.
     /// Returns where the utterance went.
     @discardableResult
-    private mutating func insert(_ utterance: Utterance) -> Int {
+    mutating func insert(_ utterance: Utterance) -> Int {
         let index = utterances.lastIndex { $0.start <= utterance.start }.map { $0 + 1 } ?? 0
         if index > 0, index == utterances.count, utterances[index - 1].speaker == utterance.speaker
         {
@@ -367,7 +276,7 @@ public struct Transcript: Sendable, Equatable {
         return index
     }
 
-    private struct Run {
+    struct Run {
         let speaker: Speaker
         let start: Double
         var end: Double

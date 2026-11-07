@@ -63,6 +63,18 @@ import Testing
         #expect(transcript.utterances.map(\.speaker) == [.remote(slot: 1)])
     }
 
+    /// A turn whose own audio came back with no words keeps the words heard live in it, under
+    /// the turn's speaker, rather than losing them.
+    @Test func liveWordsInATurnWithoutWordsKeepThatTurnsSpeaker() {
+        var transcript = Transcript()
+        transcript.applyFinal(
+            transcript: "",
+            words: [word("hello", 0, speaker: 1), word("agreed.", 5, speaker: 1)], on: .system)
+        transcript.relabel([turn(1, 0, 1, [word("hello", 0)]), turn(2, 4.8, 6, [])])
+        #expect(transcript.utterances.map(\.text) == ["hello", "agreed."])
+        #expect(transcript.utterances.map(\.speaker) == [.remote(slot: 1), .remote(slot: 2)])
+    }
+
     /// An intro the diarizer heard as no turn stays, under an unknown speaker rather than a live
     /// slot, which the offline pass numbers differently; a turn's last word, which the engine
     /// times up to half a second after the turn, is not repeated.
@@ -79,10 +91,26 @@ import Testing
         #expect(transcript.utterances.map(\.speaker) == [.unknown, .remote(slot: 2)])
     }
 
+    /// No turn's own audio holding words means the second pass failed, so nothing is rebuilt:
+    /// the speech outside every turn keeps its live speaker too, and the caller is told.
     @Test func noWordsInAnyTurnKeepsTheLiveTranscript() {
         var transcript = Transcript()
+        transcript.applyFinal(
+            transcript: "", words: [word("hello", 0, speaker: 1), word("bye", 5, speaker: 1)],
+            on: .system)
+        let rebuilt = transcript.relabel([turn(1, 0, 1, [])])
+        #expect(!rebuilt)
+        #expect(
+            transcript.utterances.flatMap(\.segments).flatMap(\.words).map(\.word) == [
+                "hello", "bye",
+            ])
+        #expect(Set(transcript.utterances.map(\.speaker)) == [.remote(slot: 1)])
+    }
+
+    @Test func aRelabelWithWordsReportsThatItRebuilt() {
+        var transcript = Transcript()
         transcript.applyFinal(transcript: "", words: [word("hello", 0, speaker: 1)], on: .system)
-        transcript.relabel([turn(1, 0, 1, [])])
-        #expect(transcript.utterances.map(\.text) == ["hello"])
+        let rebuilt = transcript.relabel([turn(1, 0, 1, [word("hello", 0)])])
+        #expect(rebuilt)
     }
 }
