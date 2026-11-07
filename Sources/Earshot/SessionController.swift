@@ -289,19 +289,12 @@ final class SessionController {
         let recordings = recordings
         self.recordings = nil
         teardown()
+        // The encoder and relabelling only read the recordings, which nothing writes to now.
+        let keeping = preferences.keepAudio ? recordings.map(startKeepingAudio) : nil
         if let recordings { await relabelSpeakers(from: recordings.system) }
         persist()
         await seal()
-        if let recordings {
-            recordings.finish()
-            if preferences.keepAudio, let savedID {
-                await keepAudio(recordings, for: savedID)
-                recordings.system.discard()
-            } else {
-                lastRecording = recordings.system
-            }
-            recordings.discardAllButSystem()
-        }
+        if let recordings { await finish(recordings, keeping: keeping) }
         state = .idle
         if !preferences.keepEngineLoaded { engine.stop() }
         sessionEnded(byUser: byUser)

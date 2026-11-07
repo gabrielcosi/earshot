@@ -25,6 +25,9 @@ public enum Problem: Hashable, Sendable, Identifiable {
     case importFailed(String)
     /// The folder the user chose could not be opened, so its 0.1 transcripts wait.
     case transcriptsFolderUnavailable
+    /// Diarizing or transcribing the whole recording failed when the session ended, so its
+    /// paragraphs keep the speakers the live stream gave them.
+    case speakersNotRelabelled
     case audioNotKept(String)
     /// A recording stopped part way, such as on a full disk; what came before it was kept.
     case audioIncomplete(String)
@@ -54,6 +57,7 @@ public enum Problem: Hashable, Sendable, Identifiable {
         case .exportFailed: "exportFailed"
         case .importFailed: "importFailed"
         case .transcriptsFolderUnavailable: "transcriptsFolderUnavailable"
+        case .speakersNotRelabelled: "speakersNotRelabelled"
         case .audioNotKept: "audioNotKept"
         case .audioIncomplete: "audioIncomplete"
         case .audioNotExported: "audioNotExported"
@@ -121,6 +125,8 @@ public enum Problem: Hashable, Sendable, Identifiable {
                 detail)
         case .transcriptsFolderUnavailable:
             "Earshot could not open your transcripts folder. Choose it again in Settings."
+        case .speakersNotRelabelled:
+            "Earshot could not check who said what when the session ended. The transcript keeps the speakers Earshot heard while listening."
         case .audioNotKept(let detail):
             Self.sentences("Earshot could not save the audio.", detail)
         case .audioIncomplete(let detail):
