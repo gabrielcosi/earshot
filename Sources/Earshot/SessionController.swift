@@ -68,7 +68,7 @@ final class SessionController {
     }
     /// The languages spoken in what the user transcribes; empty means any.
     var spokenLanguages: [String] {
-        didSet { UserDefaults.standard.set(spokenLanguages, forKey: "spokenLanguages") }
+        didSet { spokenLanguagesChanged() }
     }
     /// The user's own language: everything else gets translated into it.
     var primaryLanguage: String {
@@ -117,6 +117,7 @@ final class SessionController {
     @ObservationIgnored var translationWorker: Task<Void, Never>?
     /// Observed: words in flight in an unavailable language show as they are.
     var unavailablePairs = UnavailablePairs()
+    @ObservationIgnored var unchosenLanguages = UnchosenLanguages()
     /// What the store holds of each paragraph's translation.
     @ObservationIgnored var savedTranslations: [UUID: StoredTranslation] = [:]
     @ObservationIgnored private var awake: (any NSObjectProtocol)?
@@ -365,12 +366,12 @@ final class SessionController {
         refinements.append(
             Task {
                 do {
-                    let words = try await Retranscriber.transcribe(
+                    let refined = try await Retranscriber.transcribe(
                         pcm: pcm, engine: endpoint, allowed: allowed, contexts: contexts)
-                    let shifted = words.map {
+                    let shifted = refined.words.map {
                         Word(word: $0.word, start: $0.start + start, end: $0.end + start)
                     }
-                    transcript.refine(final, with: shifted)
+                    transcript.refine(final, with: shifted, heard: refined.heard)
                     persist()
                     translationChanged()
                 } catch {

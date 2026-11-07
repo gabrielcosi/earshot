@@ -49,7 +49,8 @@ struct LiveEngineTests {
             let end = (final.words.last?.end ?? previousEnd) + Self.refinementTail
             let pcm = try #require(client.audio(from: previousEnd, to: end))
             let words = try await Retranscriber.transcribe(
-                pcm: pcm, engine: Self.engine, allowed: [])
+                pcm: pcm, engine: Self.engine, allowed: []
+            ).words
             refined.append(words.map(\.word).joined(separator: " "))
             previousEnd = end
         }
@@ -68,12 +69,31 @@ struct LiveEngineTests {
             Bundle.module.url(forResource: "Fixtures/romanian", withExtension: "wav"))
         let pcm = try Data(contentsOf: url).dropFirst(44)
         let free = try await Retranscriber.transcribe(pcm: pcm, engine: Self.engine, allowed: [])
+            .words
         let kept = try await Retranscriber.transcribe(
-            pcm: pcm, engine: Self.engine, allowed: ["en-US", "ro-RO"])
+            pcm: pcm, engine: Self.engine, allowed: ["en-US", "ro-RO"]
+        ).words
         let text = kept.map(\.word).joined(separator: " ")
         print("auto:       \(free.map(\.word).joined(separator: " "))\nrestricted: \(text)")
         #expect(LanguagePolicy.scripts(in: text).isSubset(of: ["Latn"]))
         #expect(text.localizedCaseInsensitiveContains("trimestrul"))
+    }
+
+    /// French, with English and German spoken: forced into either, it comes back empty or as
+    /// itself, so the line keeps what `auto` heard and is marked as heard in French.
+    @Test func speechInAnUnchosenLanguageIsHeardAsItself() async throws {
+        let url = try #require(
+            Bundle.module.url(forResource: "Fixtures/french", withExtension: "wav"))
+        let pcm = try Data(contentsOf: url).dropFirst(44)
+        let heard = try await Retranscriber.transcribe(
+            pcm: pcm, engine: Self.engine, allowed: ["en-US", "de-DE"])
+        let auto = try await Retranscriber.transcribe(
+            pcm: pcm, engine: Self.engine, allowed: [])
+        let text = heard.words.map(\.word).joined(separator: " ")
+        print("heard \(heard.heard ?? "nothing"): \(text)")
+        #expect(heard.heard?.hasPrefix("fr") == true)
+        #expect(heard.words == auto.words)
+        #expect(text.localizedCaseInsensitiveContains("semaine prochaine"))
     }
 
     /// The app's whole pipeline on three voices with 0.6 s gaps: live finals, refined per line,
@@ -116,7 +136,8 @@ struct LiveEngineTests {
             let end = (final.words.last?.end ?? previousEnd) + Self.refinementTail
             let pcm = try #require(client.audio(from: previousEnd, to: end))
             let words = try await Retranscriber.transcribe(
-                pcm: pcm, engine: Self.engine, allowed: [])
+                pcm: pcm, engine: Self.engine, allowed: []
+            ).words
             transcript.refine(
                 applied,
                 with: words.map {
@@ -209,7 +230,7 @@ struct LiveEngineTests {
         try await sender.value
         let refined = try await Retranscriber.transcribe(
             pcm: pcm, engine: Self.engine, allowed: ["en-US"], contexts: rules.speechContexts
-        ).map(\.word).joined(separator: " ")
+        ).words.map(\.word).joined(separator: " ")
         for text in [live.joined(separator: " "), refined] {
             for name in ["Zentari", "Quorvex"] {
                 #expect(text.contains(name), "missing \(name) in \(text)")

@@ -34,6 +34,7 @@ clip names Samantha "Jane Doe said we should ask the Zentari team about the Quor
 clip ro Ioana "Mulțumesc. Ce riscuri avem pentru trimestrul următor?"
 clip en3 Samantha "So let's talk about how often a plan should change during the week."
 clip en4 Daniel "Every day, honestly, the plan is a guess and the week corrects it."
+clip fr Thomas "Je ne sais pas encore si nous pouvons livrer la semaine prochaine."
 
 join "$out/two-speakers.wav" 2 "$work/en1.wav" "$work/en2.wav"
 join "$out/three-languages.wav" 2 "$work/en2.wav" "$work/de.wav" "$work/es.wav"
@@ -41,6 +42,8 @@ join "$out/three-languages.wav" 2 "$work/en2.wav" "$work/de.wav" "$work/es.wav"
 join "$out/names.wav" 1 "$work/names.wav"
 # Auto-detection writes this Romanian turn in Cyrillic.
 join "$out/romanian.wav" 1 "$work/ro.wav"
+# French, outside English and German: not translated, and noticed.
+join "$out/french.wav" 1 "$work/fr.wav"
 # Shorter than the 0.8 s endpointing pause: all three languages land in one final.
 join "$out/quick-switch.wav" 0.6 "$work/en2.wav" "$work/de.wav" "$work/es.wav"
 # Turns 0.15 s apart, shorter than the 0.3-0.5 s the engine's word times trail the speech by.

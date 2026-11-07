@@ -17,13 +17,13 @@ final class Translator {
     private let lowLatency = LanguageAvailability(preferredStrategy: .lowLatency)
 
     /// `context` is the paragraph around `text`: its language stands in when `text` alone is too
-    /// short to tell. Where Apple Intelligence is off, `.highFidelity` falls back to the
-    /// `.lowLatency` models on its own.
+    /// short to tell. `spoken` limits the languages `text` can be in, empty for any. Where Apple
+    /// Intelligence is off, `.highFidelity` falls back to the `.lowLatency` models on its own.
     func translate(
-        _ text: String, context: String?, to target: Locale.Language,
+        _ text: String, context: String?, spoken: [String], to target: Locale.Language,
         strategy: TranslationSession.Strategy
     ) async throws -> Outcome {
-        guard let source = LanguageDetection.dominant(text, within: context),
+        guard let source = LanguageDetection.dominant(text, within: context, among: spoken),
             !LanguageDetection.sameLanguage(source, target)
         else { return .notNeeded }
         switch await LanguageAvailability(preferredStrategy: strategy)

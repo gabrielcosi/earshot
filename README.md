@@ -32,7 +32,7 @@ Click the ear in the menu bar and choose **Start Listening**, or, with the Earsh
 
 The window lists your transcripts by day, with the session in progress on top. Right-click a transcript to rename or delete it, or select several with ⌘-click and press Delete. Deleting removes the transcript and its kept audio from Earshot; its Markdown copy stays. Press ⌘+ and ⌘− to change the text size, and use the switch in the toolbar to show the original, the translation, or both. Everything else is in **Settings** (⌘,).
 
-- **Spoken** in the menu sets which languages are spoken, so Earshot ignores languages it mishears in noise.
+- **Spoken** in the menu sets which languages are spoken, so Earshot ignores languages it mishears in noise and translates from those only. With two or more chosen, if Earshot hears another language in more than one line, Earshot tells you and offers to add it.
 - **Translate into** your language translates every line in another language. macOS asks to download a language pair the first time it is needed.
 - **Listening to** in the menu picks the apps to transcribe, for a call next to music or a video. It starts on all apps. Two tabs in the same browser count as one app.
 - **Include my microphone** can be turned off to transcribe a podcast or a video with nobody talking over it.

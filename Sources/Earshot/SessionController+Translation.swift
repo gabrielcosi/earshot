@@ -32,10 +32,14 @@ extension SessionController {
         translationChanged()
     }
 
-    /// After every change to the transcript: what settled is stored, and what is missing waits
-    /// for the translator.
+    /// After every change to the transcript: lines heard in a language spoken by now are
+    /// translated (a refinement or relabel can land after the language was added), what settled
+    /// is stored, what is missing waits for the translator, and a language heard outside the
+    /// spoken ones is noticed.
     func translationChanged() {
+        transcript.translateHeard(spoken: spokenLanguages)
         storeTranslations()
+        noticeUnchosenLanguages()
         guard translationEnabled else { return }
         for channel in Channel.allCases where transcript.partials[channel] == nil {
             translationQueue.live(nil, on: channel, at: translationClock)
@@ -58,7 +62,7 @@ extension SessionController {
         translationWorker = Task {
             while !Task.isCancelled, let started = translationQueue.next() {
                 let (depth, begun) = (translationQueue.depth, translationClock)
-                let language = primaryLanguage
+                let (language, spoken) = (primaryLanguage, spokenLanguages)
                 let target = Locale.Language(identifier: language)
                 let (text, context): (String, String?) =
                     switch started.job {
@@ -69,7 +73,8 @@ extension SessionController {
                 do {
                     result = .success(
                         try await translator.translate(
-                            text, context: context, to: target, strategy: Self.translationStrategy))
+                            text, context: context, spoken: spoken, to: target,
+                            strategy: Self.translationStrategy))
                 } catch {
                     result = .failure(error)
                 }
@@ -172,7 +177,26 @@ extension SessionController {
         translationEnabled
             && TranslationWait.pending(
                 live: text, translation: translation, into: primaryLanguage,
-                unavailable: Array(unavailablePairs.sources))
+                spoken: spokenLanguages, unavailable: Array(unavailablePairs.sources))
+    }
+
+    /// Once a session, for each language heard outside the spoken ones in enough lines: its lines
+    /// are not translated.
+    private func noticeUnchosenLanguages() {
+        for notice in unchosenLanguages.notices(in: transcript, spoken: spokenLanguages) {
+            problems.report(notice)
+        }
+    }
+
+    /// Kept for the next launch. While listening, the next refinement and translation use it;
+    /// lines heard in a language that is spoken now are translated, and need no notice.
+    func spokenLanguagesChanged() {
+        UserDefaults.standard.set(spokenLanguages, forKey: "spokenLanguages")
+        translationChanged()
+        problems.resolve { problem in
+            guard case .languageNotSpoken(let language) = problem else { return false }
+            return LanguagePolicy.unchosen(language, allowed: spokenLanguages) == nil
+        }
     }
 
     /// Asks for Apple's download prompt for a language pair; the main window presents it. The

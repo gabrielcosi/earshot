@@ -21,6 +21,49 @@ public enum LanguagePolicy {
         return words.allSatisfy { scripts(in: $0.word).isSubset(of: permitted) }
     }
 
+    /// `reported` when it is a language, and none of the configured ones: speech in a language
+    /// the user did not choose, or noise `auto` read as one.
+    public static func unchosen(_ reported: String?, allowed: [String]) -> String? {
+        guard let reported, reported != Languages.auto, !allowed.isEmpty,
+            !allowed.contains(where: { sameLanguage($0, reported) })
+        else { return nil }
+        return reported
+    }
+
+    /// Measured on clips forced into English or German (docs/behaviour.md, Engine: language):
+    /// speech in another language comes back empty or as its own words, and reads as the forced
+    /// language at 0.00-0.09; English and German phrases read as theirs at 0.80 and up.
+    static let forcedAgreement = 0.5
+
+    /// Measured with the same agreement: two-word replies read low in their own language as often
+    /// as not ("Ja, ja." 0.08, "Okay, cool." 0.52), and so do one-word ones ("Ja." 0.08); of
+    /// thirteen three-word ones, only "Mhm, ja, okay." read under `forcedAgreement`.
+    static let forcedMinimumWords = 3
+
+    /// The unchosen language `auto` heard in a clip, or nil when it misread speech in a
+    /// configured language, or when nobody can tell:
+    /// - `said`, what `auto` heard, has too few words for the redo to tell;
+    /// - a configured language is one the recognizer cannot detect, so a redo forced into it
+    ///   reads as nothing;
+    /// - the redo forced into a configured language reads as that language: `auto` misread it.
+    ///
+    /// The redo of speech in another language often has no words at all.
+    public static func heard(
+        _ reported: String?, allowed: [String], said: [Word],
+        redo: (language: String, words: [Word])?
+    ) -> String? {
+        guard said.count >= forcedMinimumWords, LanguageDetection.constraint(allowed) != nil
+        else { return nil }
+        if let redo, agreement(redo) >= forcedAgreement { return nil }
+        // The engine leaves some clips' language as `auto` ("Nous avons préparé une courte
+        // présentation sur le projet."): what it heard tells it instead.
+        let language =
+            reported == Languages.auto || reported == nil
+            ? LanguageDetection.unspoken(said.map(\.word).joined(separator: " "), spoken: allowed)
+            : reported
+        return unchosen(language, allowed: allowed)
+    }
+
     /// Among transcripts of the same audio forced into different languages, the one whose text
     /// reads most like the language it was forced into. The engine's word confidences cannot
     /// decide this: forced into a wrong language it still reports 1.0 for every word.
@@ -30,17 +73,19 @@ public enum LanguagePolicy {
         candidates.max { lhs, rhs in agreement(lhs) < agreement(rhs) }
     }
 
-    private static func agreement(_ candidate: (language: String, words: [Word])) -> Double {
+    static func agreement(_ candidate: (language: String, words: [Word])) -> Double {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(candidate.words.map(\.word).joined(separator: " "))
-        let code = Locale.Language(identifier: candidate.language).languageCode?.identifier ?? ""
-        let hypotheses = recognizer.languageHypotheses(withMaximum: 30)
-        return hypotheses.first { $0.key.rawValue.hasPrefix(code) }?.value ?? 0
+        let language = LanguageDetection.recognizerLanguage(candidate.language)
+        return recognizer.languageHypotheses(withMaximum: 30)[language] ?? 0
     }
 
+    /// "nb-NO" and "no-NO" are both Norwegian.
     private static func sameLanguage(_ lhs: String, _ rhs: String) -> Bool {
         Locale.Language(identifier: lhs).languageCode
             == Locale.Language(identifier: rhs).languageCode
+            || LanguageDetection.recognizerLanguage(lhs)
+                == LanguageDetection.recognizerLanguage(rhs)
     }
 
     /// ISO 15924 scripts a language is written in; Japanese and Korean mix several.

@@ -12,6 +12,22 @@ public enum Languages {
         "zh-CN", "zh-TW", "ja-JP", "ko-KR", "th-TH", "vi-VN", "id-ID", "ms-MY",
     ]
 
+    /// The code the Spoken menu offers for a language the engine reported: the same locale, or
+    /// the first with its language. Nil when the menu offers none.
+    public static func code(for reported: String) -> String? {
+        codes.contains(reported) ? reported : codes.first { language($0) == language(reported) }
+    }
+
+    /// A locale code's language, without its region: "fr" for "fr-CA".
+    static func language(_ code: String) -> String {
+        Locale.Language(identifier: code).languageCode?.identifier ?? code
+    }
+
+    /// A language's name without its region: "French" for "fr-CA".
+    public static func name(_ code: String, locale: Locale = .current) -> String {
+        locale.localizedString(forLanguageCode: language(code)) ?? code
+    }
+
     /// The spoken languages, short enough for the menu bar's menu at any choice: names without
     /// their region, unless several share a name ("English (US, GB)"). Past two names, or past one
     /// that needs its regions, the first and a count, as the menu counts apps.
@@ -19,12 +35,8 @@ public enum Languages {
         guard !codes.isEmpty else { return "Any language" }
         var regions: [(name: String, regions: [String])] = []
         for code in codes {
-            let language = Locale.Language(identifier: code)
-            let name =
-                language.languageCode.flatMap {
-                    locale.localizedString(forLanguageCode: $0.identifier)
-                } ?? code
-            let region = language.region?.identifier ?? ""
+            let name = name(code, locale: locale)
+            let region = Locale.Language(identifier: code).region?.identifier ?? ""
             if let index = regions.firstIndex(where: { $0.name == name }) {
                 regions[index].regions.append(region)
             } else {

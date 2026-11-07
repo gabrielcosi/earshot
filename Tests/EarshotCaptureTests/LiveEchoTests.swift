@@ -17,10 +17,10 @@ struct LiveEchoTests {
         let cleaned = Signal.pcm(try Signal.cancel(far: far, microphone: microphone))
         let before = try await Retranscriber.transcribe(
             pcm: Signal.pcm(microphone), engine: Self.engine, allowed: ["en-US"]
-        ).map(\.word).joined(separator: " ")
+        ).words.map(\.word).joined(separator: " ")
         let after = try await Retranscriber.transcribe(
             pcm: cleaned, engine: Self.engine, allowed: ["en-US"]
-        ).map(\.word).joined(separator: " ")
+        ).words.map(\.word).joined(separator: " ")
         print("echo: \"\(before)\"\ncancelled: \"\(after)\"")
         #expect(before.contains("storage product"), "the uncancelled echo must be transcribable")
         #expect(after.isEmpty, "the engine still heard \"\(after)\"")

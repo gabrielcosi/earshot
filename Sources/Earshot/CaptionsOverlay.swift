@@ -31,7 +31,7 @@ struct CaptionsOverlay: View {
             if !underBar {
                 topBar(title: title).hidden()
                 ForEach(problems) { problem in
-                    ProblemRow(problem: problem, dismissible: false)
+                    ProblemRow(problem: problem)
                 }
                 .buttonStyle(.glass)
             }
@@ -85,9 +85,9 @@ struct CaptionsOverlay: View {
 
     private var stopped: Bool { controller.state == .idle && controller.endedOnItsOwn }
 
-    /// Why listening stopped; while listening, why lines go untranslated.
+    /// Why listening stopped; while listening, why lines show as they do.
     private var problems: [Problem] {
-        controller.problems.all.filter { stopped ? $0.endsWithSession : $0.isTranslation }
+        controller.problems.all.filter { stopped ? $0.endsWithSession : $0.isNotice }
     }
 
     /// Nil when nothing is translated.

@@ -53,6 +53,7 @@ extension SessionController {
     /// A start clears the last session's problems and its own failure.
     func beginStart() {
         problems.startSession()
+        unchosenLanguages = UnchosenLanguages()
         startFailure = nil
         endedOnItsOwn = false
         captionsDismissed = false

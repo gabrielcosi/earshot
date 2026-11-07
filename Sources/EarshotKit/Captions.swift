@@ -72,12 +72,14 @@ public enum TranslationWait {
     /// Words still being recognized are translated as they grow, without an outcome to record,
     /// so the translator's own rule decides: words in the target language are never translated,
     /// nor those in a language in `unavailable`, whose pair needs a download or is unsupported,
-    /// nor words too few to tell the language ("Hm."): all of these show as they are.
+    /// nor words too few to tell the language ("Hm."): all of these show as they are. `spoken`
+    /// limits the languages they can be in, as it does for the translator.
     public static func pending(
-        live text: String, translation: String?, into target: String, unavailable: [String] = []
+        live text: String, translation: String?, into target: String, spoken: [String] = [],
+        unavailable: [String] = []
     ) -> Bool {
         guard translation == nil else { return false }
-        guard let source = LanguageDetection.dominant(text) else { return false }
+        guard let source = LanguageDetection.dominant(text, among: spoken) else { return false }
         let same = { (code: String) in
             LanguageDetection.sameLanguage(source, Locale.Language(identifier: code))
         }

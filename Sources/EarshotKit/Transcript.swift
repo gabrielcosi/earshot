@@ -35,6 +35,8 @@ public struct Segment: Identifiable, Sendable, Equatable {
     public var text: String
     /// Timed words, kept so speakers can be reassigned word by word after the session.
     public var words: [Word] = []
+    /// A language outside the spoken ones that the engine heard in its audio: not translated.
+    var heard: HeardOutside?
 }
 
 /// A stretch of audio one speaker holds, from diarizing the whole recording.
@@ -48,17 +50,6 @@ public struct SpeakerTurn: Sendable, Equatable, Decodable {
         self.start = start
         self.end = end
         self.speaker = speaker
-    }
-}
-
-/// A speaker turn with the words heard in its audio alone, timed from the session's start.
-public struct TranscribedTurn: Sendable, Equatable {
-    public let turn: SpeakerTurn
-    public let words: [Word]
-
-    public init(turn: SpeakerTurn, words: [Word]) {
-        self.turn = turn
-        self.words = words
     }
 }
 
@@ -86,6 +77,8 @@ public struct Utterance: Identifiable, Sendable, Equatable {
     public internal(set) var translation = ParagraphTranslation.untranslated
     /// The paragraph's sentences, split again whenever its text changes.
     public internal(set) var sentences: [String] = []
+    /// Its sentences holding words heard outside the spoken languages: they show as said.
+    var heardOutside: Set<String> = []
     /// The live translation of the words its latest final added, shown after the translated
     /// sentences until one from `carriedFrom` on, where those words start, is translated.
     var carried: String?
@@ -133,7 +126,7 @@ public struct LiveLine: Identifiable, Sendable, Equatable {
 
 /// The session so far: final utterances in time order plus the in-flight partial of each channel.
 public struct Transcript: Sendable, Equatable {
-    public private(set) var utterances: [Utterance] = []
+    public internal(set) var utterances: [Utterance] = []
     public private(set) var partials: [Channel: String] = [:]
     private var liveTranslations: [Channel: Translation] = [:]
     /// The language translated into; nil while nothing is translated.
@@ -147,8 +140,8 @@ public struct Transcript: Sendable, Equatable {
     mutating func compose(at index: Int) {
         let utterance = utterances[index]
         let translation = ParagraphTranslation.compose(
-            utterance.sentences, outcomes: outcomes, carried: utterance.carried,
-            from: utterance.carriedFrom, into: translationTarget)
+            utterance.sentences, outcome: { outcome(of: $0, in: utterance) },
+            carried: utterance.carried, from: utterance.carriedFrom, into: translationTarget)
         utterances[index].translation = translation
         if translation.started || translation.text != nil {
             utterances[index].translationShown = true
@@ -161,6 +154,10 @@ public struct Transcript: Sendable, Equatable {
     mutating func textChanged(at index: Int) -> Int {
         let before = utterances[index].sentences
         utterances[index].sentences = Sentences.split(utterances[index].text)
+        utterances[index].heardOutside = Sentences.holding(
+            utterances[index].segments.filter { !$0.text.isEmpty }.map {
+                (text: $0.text, marked: $0.heard != nil)
+            })
         compose(at: index)
         return zip(before, utterances[index].sentences).prefix { $0 == $1 }.count
     }
@@ -223,9 +220,10 @@ public struct Transcript: Sendable, Equatable {
 
     /// Replaces a final's live text with a second pass over its audio. Each word goes to the
     /// segment nearest in time, so a final that spans two speakers keeps its speaker split.
-    /// Segments that get no words keep their live text.
-    public mutating func refine(_ final: AppliedFinal, with words: [Word]) {
+    /// Segments that get no words keep their live text; those that do are marked `heard`.
+    public mutating func refine(_ final: AppliedFinal, with words: [Word], heard: String? = nil) {
         guard !final.segments.isEmpty, !words.isEmpty else { return }
+        let heard = heard.map { HeardOutside(language: $0) }
         var assigned: [UUID: [Word]] = [:]
         for word in words {
             let middle = (word.start + word.end) / 2
@@ -243,6 +241,7 @@ public struct Transcript: Sendable, Equatable {
                 utterances[index].segments[position].text =
                     words.map(\.word).joined(separator: " ")
                 utterances[index].segments[position].words = words
+                utterances[index].segments[position].heard = heard
                 textChanged(at: index)
             }
         }
@@ -261,7 +260,7 @@ public struct Transcript: Sendable, Equatable {
             turns.filter { !$0.words.isEmpty }.map { turn in
                 Self.utterance(
                     .remote(slot: turn.turn.speaker), start: turn.turn.start, end: turn.turn.end,
-                    words: turn.words)
+                    words: turn.words, heard: turn.heard)
             } + missed(by: turns.map(\.turn))
         guard !rebuilt.isEmpty else { return }
         let kept = utterances.filter { $0.speaker == .me }
@@ -325,12 +324,13 @@ public struct Transcript: Sendable, Equatable {
     }
 
     private static func utterance(
-        _ speaker: Speaker, start: Double, end: Double, words: [Word]
+        _ speaker: Speaker, start: Double, end: Double, words: [Word], heard: String? = nil
     ) -> Utterance {
         var utterance = Utterance(
             speaker: speaker, start: start, end: end,
             text: words.map(\.word).joined(separator: " "))
         utterance.segments[0].words = words
+        utterance.segments[0].heard = heard.map { HeardOutside(language: $0) }
         return utterance
     }
 

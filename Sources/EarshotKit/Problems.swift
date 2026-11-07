@@ -35,6 +35,8 @@ public enum Problem: Hashable, Sendable, Identifiable {
     /// Language identifiers, such as "de" and "en".
     case translationNeedsDownload(from: String, to: String)
     case translationUnsupported(from: String, to: String)
+    /// The engine heard a language outside the spoken ones, as it reported it, such as "fr-FR".
+    case languageNotSpoken(String)
 
     /// One per kind, and per channel or language pair where there is one, so a problem reported
     /// again replaces its earlier report.
@@ -60,6 +62,8 @@ public enum Problem: Hashable, Sendable, Identifiable {
             "translationNeedsDownload.\(source).\(target)"
         case .translationUnsupported(let source, let target):
             "translationUnsupported.\(source).\(target)"
+        case .languageNotSpoken(let language):
+            "languageNotSpoken.\(Languages.language(language))"
         }
     }
 
@@ -70,11 +74,20 @@ public enum Problem: Hashable, Sendable, Identifiable {
         }
     }
 
+    /// It tells why lines show as they do rather than that something failed: in grey, and in the
+    /// captions overlay while listening.
+    public var isNotice: Bool {
+        switch self {
+        case .translationNeedsDownload, .translationUnsupported, .languageNotSpoken: true
+        default: false
+        }
+    }
+
     /// Whether a new session makes it moot. The rest stand until what causes them changes.
     public var endsWithSession: Bool {
         switch self {
         case .noModel, .importFailed, .transcriptsFolderUnavailable, .translationNeedsDownload,
-            .translationUnsupported:
+            .translationUnsupported, .languageNotSpoken:
             false
         default: true
         }
@@ -122,6 +135,8 @@ public enum Problem: Hashable, Sendable, Identifiable {
             "Translating \(Self.name(source, in: locale)) into \(Self.name(target, in: locale)) needs Apple's language download."
         case .translationUnsupported(let source, let target):
             "Apple cannot translate \(Self.name(source, in: locale)) into \(Self.name(target, in: locale))."
+        case .languageNotSpoken(let language):
+            "Earshot heard \(Languages.name(language, locale: locale)), which isn't in your Spoken languages."
         }
     }
 
@@ -166,6 +181,31 @@ public struct Problems: Sendable, Equatable {
 
     public mutating func startSession() {
         resolve { $0.endsWithSession }
+    }
+}
+
+/// Languages the engine heard outside the spoken ones, each noticed once a session. A line heard
+/// in one is not translated: its words were forced into a spoken language.
+public struct UnchosenLanguages: Sendable, Equatable {
+    /// One line can be noise the engine reads as a language nobody spoke (`LanguagePolicy`); a
+    /// second in the same language is taken as someone speaking it.
+    static let lines = 2
+    private var noticed: Set<String> = []
+
+    public init() {}
+
+    /// The notices to report now: languages heard in enough lines and still not among `spoken`.
+    public mutating func notices(in transcript: Transcript, spoken: [String]) -> [Problem] {
+        let heard = transcript.utterances.flatMap(\.segments).compactMap(\.heard).filter {
+            LanguagePolicy.unchosen($0.language, allowed: spoken) != nil
+        }
+        let byLanguage = Dictionary(grouping: heard) { Languages.language($0.language) }
+        return byLanguage.keys.sorted().compactMap { language in
+            guard let clips = byLanguage[language], Set(clips.map(\.clip)).count >= Self.lines,
+                noticed.insert(language).inserted
+            else { return nil }
+            return .languageNotSpoken(clips[0].language)
+        }
     }
 }
 

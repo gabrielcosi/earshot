@@ -6,8 +6,6 @@ import SwiftUI
 /// where there is one.
 struct ProblemRow: View {
     let problem: Problem
-    /// The overlay keeps its problems for as long as they explain what it shows.
-    var dismissible = true
     @Environment(SessionController.self) private var controller
     @Environment(Navigation.self) private var navigation
     @Environment(\.dismiss) private var dismiss
@@ -15,7 +13,7 @@ struct ProblemRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: symbol)
-                .foregroundStyle(problem.isTranslation ? Color.secondary : Color.orange)
+                .foregroundStyle(problem.isNotice ? Color.secondary : Color.orange)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(problem.message())
@@ -27,12 +25,14 @@ struct ProblemRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             // No model is not a report but the state of the library: it goes once a model is
             // chosen, and the button under it sets one up.
-            if dismissible, problem != .noModel {
+            if problem != .noModel {
                 Button("Dismiss", systemImage: "xmark") { controller.problems.dismiss(problem) }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .controlSize(.small)
                     .help("Dismiss")
+                    // Two rows' ✕ are told apart by what they dismiss.
+                    .accessibilityHint(problem.message())
             }
         }
         .font(.callout)
@@ -41,7 +41,7 @@ struct ProblemRow: View {
     private var symbol: String {
         switch problem {
         case .translationNeedsDownload: "arrow.down.circle"
-        case .translationUnsupported: "info.circle"
+        case .translationUnsupported, .languageNotSpoken: "info.circle"
         default: "exclamationmark.triangle"
         }
     }
@@ -80,6 +80,12 @@ struct ProblemFix {
             Action(title: "Download…", run: { download(from: source, to: target) })
         case .transcriptsFolderUnavailable:
             Action(title: "Open Settings…", run: showGeneralSettings)
+        case .languageNotSpoken(let language):
+            Languages.code(for: language).map { code in
+                Action(
+                    title: "Add \(Languages.name(code))",
+                    run: { controller.spokenLanguages.append(code) })
+            }
         default:
             nil
         }

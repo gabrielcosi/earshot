@@ -10,6 +10,13 @@ public enum SentenceOutcome: Sendable, Equatable {
     case failed
 }
 
+/// A language the engine heard outside the spoken ones, in one clip: a final's audio, or a
+/// speaker turn's. A final split between speakers is still one clip.
+struct HeardOutside: Sendable, Equatable {
+    let language: String
+    let clip = UUID()
+}
+
 /// A paragraph's translation as it shows: the translations of its sentences in order, as far as
 /// every sentence before has one, then the live translation carried from its latest final until
 /// a sentence of that final's has an outcome. Sentences kept, unavailable, or failed show as they
@@ -28,14 +35,14 @@ public struct ParagraphTranslation: Sendable, Equatable {
     /// `target` is nil while nothing is translated. `carried` translates the sentences from
     /// `carriedFrom` on; once one of those has its own outcome, showing both would say it twice.
     static func compose(
-        _ sentences: [String], outcomes: [String: SentenceOutcome], carried: String?,
+        _ sentences: [String], outcome: (String) -> SentenceOutcome?, carried: String?,
         from carriedFrom: Int, into target: String?
     ) -> ParagraphTranslation {
         guard let target else { return .untranslated }
         var parts: [String] = []
         var translated = false
         for sentence in sentences {
-            switch outcomes[sentence] {
+            switch outcome(sentence) {
             case .translated(let text):
                 parts.append(text)
                 translated = true
@@ -43,14 +50,14 @@ public struct ParagraphTranslation: Sendable, Equatable {
                 parts.append(sentence)
             case nil:
                 if let carried,
-                    !sentences.dropFirst(carriedFrom).contains(where: { outcomes[$0] != nil })
+                    !sentences.dropFirst(carriedFrom).contains(where: { outcome($0) != nil })
                 {
                     parts.append(carried)
                     translated = true
                 }
                 return ParagraphTranslation(
                     text: translated ? Sentences.join(parts, into: target) : nil, settled: false,
-                    started: sentences.contains { outcomes[$0] != nil })
+                    started: sentences.contains { outcome($0) != nil })
             }
         }
         return ParagraphTranslation(
@@ -102,6 +109,32 @@ extension Transcript {
         return changed
     }
 
+    /// Lines heard in a language that is spoken now are translated after all, their sentences
+    /// afresh: one translated before its line was marked was read as another spoken language.
+    /// Returns whether any was.
+    @discardableResult
+    public mutating func translateHeard(spoken: [String]) -> Bool {
+        var forgotten: Set<String> = []
+        for index in utterances.indices {
+            let before = utterances[index].heardOutside
+            var changed = false
+            for position in utterances[index].segments.indices {
+                guard let heard = utterances[index].segments[position].heard,
+                    LanguagePolicy.unchosen(heard.language, allowed: spoken) == nil
+                else { continue }
+                utterances[index].segments[position].heard = nil
+                changed = true
+            }
+            guard changed else { continue }
+            textChanged(at: index)
+            forgotten.formUnion(before.subtracting(utterances[index].heardOutside))
+        }
+        guard !forgotten.isEmpty else { return false }
+        for sentence in forgotten { outcomes[sentence] = nil }
+        composeAll()
+        return true
+    }
+
     /// A language pair was installed: what was unavailable is tried again.
     public mutating func forgetUnavailable() {
         outcomes = outcomes.filter { $0.value != .unavailable }
@@ -128,15 +161,25 @@ extension Transcript {
         guard translationTarget != nil else { return [] }
         var seen: Set<String> = []
         return utterances.reversed().filter { !$0.translation.settled }.flatMap { utterance in
-            utterance.sentences.filter { outcomes[$0] == nil && seen.insert($0).inserted }
-                .map { SentenceRequest(text: $0, paragraph: utterance.text) }
+            utterance.sentences.filter {
+                outcome(of: $0, in: utterance) == nil && seen.insert($0).inserted
+            }
+            .map { SentenceRequest(text: $0, paragraph: utterance.text) }
         }
+    }
+
+    /// A sentence heard in a language outside the spoken ones stays as it was said.
+    func outcome(of sentence: String, in utterance: Utterance) -> SentenceOutcome? {
+        utterance.heardOutside.contains(sentence) ? .kept : outcomes[sentence]
     }
 
     /// How many of the paragraphs' different sentences have an outcome, and how many are pending.
     public var sentenceCoverage: (known: Int, pending: Int) {
         let all = Set(utterances.flatMap(\.sentences))
-        let known = all.filter { outcomes[$0] != nil }.count
-        return (known, all.count - known)
+        let known = Set(
+            utterances.flatMap { utterance in
+                utterance.sentences.filter { outcome(of: $0, in: utterance) != nil }
+            })
+        return (known.count, all.count - known.count)
     }
 }
