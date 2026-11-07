@@ -12,6 +12,8 @@ What the speech engine, Core Audio, and Apple's frameworks actually do, establis
 - **Finals carry no language.** The realtime `completed` event has `transcript`, `words`, and `audio_processed`, but not the detected language, even with `language: auto`. The HTTP `verbose_json` response has it. The app detects the language of each utterance itself.
 - **Word times are relative to the start of the session**, in seconds. Speaker slots are 1-based, in order of first appearance, and absent when diarization is off.
 - The request `model` field is ignored. The server uses its one loaded ASR model.
+- **Look-ahead trades a little delay for accuracy and compute.** `asr.streaming.rnnt_right_context` sets how many 80 ms frames past each chunk the model hears (0, 1, 3, 6 or 13). Measured on a real 43-minute English and German meeting against a two-model reference: going from the default 1 to 3 cut word errors from 9.8% to 9.0% on the remote channel and from 10.5% to 10.1% on the microphone, cut live GPU time by a third, and showed words 0.07 s later. Finals came no later. 6 was about 0.3 points better again but 0.2 s later on partials and 0.6 s on finals; 13 broke endpointing, with fewer, much later finals. `config/server.yaml` sets 3.
+- **Audio streamed far faster than real time drops the session.** Fed unpaced, the engine closed the socket without a close frame or error after about 100 s of wall time. Earshot streams at real time.
 
 ## Engine: word boosting
 

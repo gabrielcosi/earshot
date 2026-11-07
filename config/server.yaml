@@ -13,3 +13,5 @@ asr:
   endpointing:
     enable: true
     stop_history_eou_ms: 800
+  streaming:
+    rnnt_right_context: 3
