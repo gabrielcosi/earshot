@@ -2,7 +2,7 @@
 # yaml-language-server: $schema=https://kritika.home-operations.com/kritika.schema.json
 review:
   model: bifrost/anthropic/claude-sonnet-5-5
-  fallback: bifrost/opencode/deepseek-v4.1-flash
+  fallback: bifrost/proxyapi/claude-sonnet-5-5
   effort: high
   approve: true
   agents:
@@ -12,6 +12,7 @@ review:
         - { name: renovate, expr: pr.bot }
     - name: deep
       model: bifrost/anthropic/claude-opus-5-5
+      fallback: bifrost/proxyapi/claude-opus-5-5
       effort: high
       when:
         - name: engine
