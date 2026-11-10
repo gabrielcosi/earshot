@@ -7,9 +7,9 @@ enum CaptionsSettings {
     static let display = "captionsDisplay"
 }
 
-/// The captions overlay's content: the last turns and the words still being recognized, from the
-/// panel's top edge down, as many as its height holds, or why listening stopped when it stopped on
-/// its own. What it listens to and its controls float over the top, where the text fades out.
+/// The captions overlay's content: the session's turns and the words still being recognized,
+/// scrolled to the latest, or why listening stopped when it stopped on its own. What it listens to
+/// and its controls float over the top, where the text fades out.
 struct CaptionsOverlay: View {
     @Environment(SessionController.self) private var controller
     @AppStorage(CaptionsSettings.textSize) private var textSize = CaptionTextSize.medium
@@ -36,24 +36,10 @@ struct CaptionsOverlay: View {
                 .buttonStyle(.glass)
             }
             if !stopped {
-                // Dragged from the text; the controls are left out of the drag, so their clicks
-                // reach them.
                 CaptionLines(
                     display: title == nil ? .original : display, textSize: textSize.points,
                     top: underBar ? bar : 0, legibleTop: (underBar ? bar : 0) + fade
                 )
-                .mask {
-                    // Nothing shows under the status and controls; below them the text fades in.
-                    VStack(spacing: 0) {
-                        if underBar { topBar(title: title).hidden() }
-                        LinearGradient(
-                            colors: [.clear, .black], startPoint: .top, endPoint: .bottom
-                        )
-                        .frame(height: fade)
-                        Color.black
-                    }
-                }
-                .gesture(WindowDragGesture())
             }
         }
         .padding(.horizontal, Self.padding)
@@ -153,9 +139,9 @@ struct CaptionsOverlay: View {
     }
 }
 
-/// The last turns and the words still being recognized, newest at the bottom, in the height the
-/// user gives the overlay. A turn can be minutes of one speaker, so what does not fit scrolls up
-/// and out at the top.
+/// The session's turns and the words still being recognized, newest at the bottom, following the
+/// latest until the user scrolls up. A turn can be minutes of one speaker, so however small the
+/// overlay, all of it can be read.
 private struct CaptionLines: View {
     let display: TranslationDisplay
     let textSize: Double
@@ -164,19 +150,14 @@ private struct CaptionLines: View {
     /// Where text is legible again below that row: a speaker's name moves down to it.
     let legibleTop: Double
     @Environment(SessionController.self) private var controller
-    /// Rebuilt only when the last turns change, not with every partial.
+    /// Rebuilt only when the turns change, not with every partial.
     @State private var lines: [TranscriptLine] = []
     /// Grows to fit every speaker shown this session and never narrows, so rows do not shift.
     @State private var columnWidth = 0.0
-    @State private var height = 0.0
 
     /// The approved design's gap between rows.
     private static let spacing = 8.0
     nonisolated static let area = "captions"
-
-    /// A turn is at least a line tall, so no more than this many can show; the rest are not laid
-    /// out, however long the session.
-    private var turns: Int { Int(height / textSize) + 1 }
 
     var body: some View {
         let live = controller.transcript.liveLines
@@ -189,55 +170,71 @@ private struct CaptionLines: View {
         .fixedSize(horizontal: false, vertical: true)
         .hidden()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onGeometryChange(for: Double.self) {
-            $0.size.height
-        } action: {
-            height = $0
-        }
-        .overlay(alignment: .bottomLeading) {
-            VStack(alignment: .leading, spacing: Self.spacing) {
-                ForEach(lines) { line in
-                    // Showing translations alone, a turn waiting for its translation shows once
-                    // it has one.
-                    if display != .translation
-                        || !controller.awaitsTranslation(line)
-                    {
-                        CaptionRow(
-                            line: line, display: display, textSize: textSize,
-                            columnWidth: columnWidth, legibleTop: legibleTop)
+        .overlay {
+            ScrollView {
+                // The live rows scroll with the turns: pinned below them, they would take all of
+                // the least height.
+                LazyVStack(alignment: .leading, spacing: Self.spacing) {
+                    ForEach(lines) { line in
+                        // Showing translations alone, a turn waiting for its translation shows
+                        // once it has one.
+                        if display != .translation
+                            || !controller.awaitsTranslation(line)
+                        {
+                            CaptionRow(
+                                line: line, display: display, textSize: textSize,
+                                columnWidth: columnWidth, legibleTop: legibleTop)
+                        }
+                    }
+                    // Each source keeps its row while listening, so the overlay never looks idle.
+                    if let status {
+                        Text(status).font(.system(size: textSize)).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(
+                            Channel.allCases.filter { controller.levels[$0] != nil }, id: \.self
+                        ) { channel in
+                            LiveLineRow(
+                                channel: channel, live: live.first { $0.channel == channel },
+                                display: display, textSize: textSize, columnWidth: columnWidth)
+                        }
                     }
                 }
-                // Each source keeps its row while listening, so the overlay never looks idle.
-                if let status {
-                    Text(status).font(.system(size: textSize)).foregroundStyle(.secondary)
-                } else {
-                    ForEach(Channel.allCases.filter { controller.levels[$0] != nil }, id: \.self) {
-                        channel in
-                        LiveLineRow(
-                            channel: channel, live: live.first { $0.channel == channel },
-                            display: display, textSize: textSize, columnWidth: columnWidth)
-                    }
+                .padding(.top, legibleTop)
+            }
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            // A session shorter than the overlay sits at its bottom, not under the controls.
+            .defaultScrollAnchor(.bottom, for: .alignment)
+            .scrollIndicators(.never)
+            .coordinateSpace(.named(Self.area))
+            .mask {
+                // Nothing shows under the status and controls; below them the text fades in.
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: top)
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: legibleTop - top)
+                    Color.black
                 }
             }
-            .fixedSize(horizontal: false, vertical: true)
+            // Dragged from the text; the controls are left out of the drag, so their clicks
+            // reach them.
+            .gesture(WindowDragGesture())
+            .followsLatest(
+                controller.state != .idle, startsAtBottom: true, lineHeight: textSize,
+                compact: true)
         }
-        .coordinateSpace(.named(Self.area))
-        .clipped()
         .background {
             SpeakerColumnSizer(lines: lines, channels: Array(controller.levels.keys)) { width in
                 columnWidth = max(columnWidth, width)
             }
         }
-        .onChange(of: Array(controller.transcript.utterances.suffix(turns)), initial: true) {
-            show()
-        }
+        .onChange(of: controller.transcript.utterances, initial: true) { show() }
         .onChange(of: controller.names) { show() }
         .onChange(of: controller.rules) { show() }
     }
 
     private func show() {
-        lines = TranscriptLine.latest(
-            turns, in: controller.transcript, names: controller.names, rules: controller.rules)
+        lines = TranscriptLine.lines(
+            in: controller.transcript, names: controller.names, rules: controller.rules)
     }
 
     /// Before the sources' rows: while starting, and while the engine loads.

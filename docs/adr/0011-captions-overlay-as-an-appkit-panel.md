@@ -7,7 +7,7 @@
 
 ## Context
 
-The captions overlay shows the last few lines over any app while listening, including a call in full screen. It must never take focus from the call: typing stays in the call's chat while the overlay is clicked, moved, or resized.
+The captions overlay shows the session's lines, newest at the bottom, over any app while listening, including a call in full screen. It must never take focus from the call: typing stays in the call's chat while the overlay is clicked, moved, or resized.
 
 SwiftUI's window scenes offer a floating level, but not the window behaviour this needs: joining every Space and full-screen Spaces (`NSWindow.collectionBehavior`), or a window that takes clicks without activating its app (`NSWindow.StyleMask.nonactivatingPanel`). A floating panel of a regular app, which Earshot is while its window is open, is not shown over another app's full-screen Space unless it is non-activating ([behaviour](../behaviour.md#appkit-floating-panels)).
 
@@ -18,7 +18,7 @@ Apple documents `NSWindow.SharingType.none` as "a legacy constant that macOS no 
 **The overlay is an `NSPanel` hosting SwiftUI content. It is a window like any other to screen sharing.**
 
 - The panel is titled with its title bar hidden, for the system's shadow, corners, and edge resizing. It is non-activating, cannot become key or main, floats, joins all Spaces and full-screen Spaces, and is ordered front without activating Earshot. It is not counted with Earshot's windows, so it adds no Dock icon.
-- It takes clicks: it is dragged by its text or background and resized from its edges, and its controls work, all without activating Earshot. The controls are left out of the drag, and are drawn as active although the panel never becomes key. Its height decides how much it shows, down to the live line and the line before it; its frame is remembered. Clicks do not pass through to the app behind it.
+- It takes clicks: it is dragged by its text or background and resized from its edges, and its controls work, all without activating Earshot. The controls are left out of the drag, and are drawn as active although the panel never becomes key. It can be made as small as the live line and the line before it, and its frame is remembered. However small it is, it scrolls back through the whole session: at the bottom it follows new lines, scrolled up it stays where the user is reading, and a button returns to the latest. Clicks do not pass through to the app behind it.
 - It shows while listening and hides when the user stops. A session that ends on its own, or fails to start, leaves it showing why, with the fix, until ✕ or the next start. ✕ hides it for the rest of the session; the setting stays on.
 - The text sits on the dark HUD material, whatever the system appearance, to read over bright video. Liquid Glass is only on its controls.
 - `sharingType` is not set. Settings says people see the overlay when the whole screen is shared, and that sharing a single window keeps it private.

@@ -6,46 +6,6 @@ import Testing
 @Suite struct CaptionsTests {
     private static let english = Locale(identifier: "en")
 
-    /// The overlay shows the tail of what the window shows: the same speakers, colours, rules, and
-    /// translations, even once the first speakers have scrolled off.
-    @Test func theLatestLinesAreTheWindowsLastLines() {
-        var transcript = Transcript()
-        for (index, slot) in [2, 1, 3, 1].enumerated() {
-            transcript.applyFinal(
-                transcript: "",
-                words: [
-                    Word(
-                        word: "uh line\(index)", start: Double(index),
-                        end: Double(index) + 0.5, speaker: slot)
-                ], on: .system)
-        }
-        transcript.applyFinal(
-            transcript: "Hi", words: [Word(word: "Hi", start: 5, end: 5.2)], on: .microphone)
-        transcript.translate(into: "de")
-        transcript.record(.translated("Hallo"), for: "Hi", into: "de")
-        let names: [Speaker: String] = [.remote(slot: 3): "Ada"]
-        let rules = WordRules()
-        let all = TranscriptLine.lines(in: transcript, names: names, rules: rules)
-
-        for count in 1...3 {
-            let latest = TranscriptLine.latest(count, in: transcript, names: names, rules: rules)
-            #expect(latest == Array(all.suffix(count)))
-        }
-        let latest = TranscriptLine.latest(3, in: transcript, names: names, rules: rules)
-        #expect(latest.map(\.voice) == [.other(2), .other(1), .me])
-        #expect(latest.map(\.speaker) == ["Ada", "Speaker 1", "Me"])
-        #expect(latest.map(\.text) == ["line2", "line3", "Hi"])
-        #expect(latest.last?.translation == "Hallo")
-    }
-
-    @Test func askingForMoreLinesThanThereAreGivesThemAll() {
-        var transcript = Transcript()
-        transcript.applyFinal(
-            transcript: "Hi", words: [Word(word: "Hi", start: 0, end: 0.2)], on: .microphone)
-        #expect(TranscriptLine.latest(3, in: transcript).map(\.text) == ["Hi"])
-        #expect(TranscriptLine.latest(3, in: Transcript()).isEmpty)
-    }
-
     private func title(_ spoken: [String], translating: Bool = true) -> String? {
         CaptionsTitle.text(
             spoken: spoken, target: "en", translating: translating, locale: Self.english)

@@ -4,22 +4,29 @@ import SwiftUI
 extension View {
     /// Keeps a live transcript at its latest line until the reader scrolls up, with a button
     /// back down meanwhile. `lineHeight` is the tolerance for being at the bottom: a reader who
-    /// stops within one line of it meant the bottom.
-    func followsLatest(_ active: Bool, startsAtBottom: Bool, lineHeight: Double) -> some View {
+    /// stops within one line of it meant the bottom. A `compact` button is small, in the bottom
+    /// trailing corner, like the captions overlay's other controls.
+    func followsLatest(
+        _ active: Bool, startsAtBottom: Bool, lineHeight: Double, compact: Bool = false
+    ) -> some View {
         modifier(
-            FollowLatest(active: active, lineHeight: lineHeight, startsAtBottom: startsAtBottom))
+            FollowLatest(
+                active: active, lineHeight: lineHeight, compact: compact,
+                startsAtBottom: startsAtBottom))
     }
 }
 
 private struct FollowLatest: ViewModifier {
     let active: Bool
     let lineHeight: Double
+    let compact: Bool
     @State private var position: ScrollPosition
     @State private var follow = ScrollFollow()
 
-    init(active: Bool, lineHeight: Double, startsAtBottom: Bool) {
+    init(active: Bool, lineHeight: Double, compact: Bool, startsAtBottom: Bool) {
         self.active = active
         self.lineHeight = lineHeight
+        self.compact = compact
         _position = State(initialValue: ScrollPosition(edge: startsAtBottom ? .bottom : .top))
     }
 
@@ -55,7 +62,7 @@ private struct FollowLatest: ViewModifier {
                     position.scrollTo(edge: .bottom)
                 }
             }
-            .overlay(alignment: .bottom) {
+            .overlay(alignment: compact ? .bottomTrailing : .bottom) {
                 if active, !follow.pinned {
                     // Not animated: an animated scroll crosses lazy rows that are measured on the
                     // way, and their corrections move the offset up as a reader would.
@@ -66,9 +73,9 @@ private struct FollowLatest: ViewModifier {
                     .labelStyle(.iconOnly)
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
-                    .controlSize(.large)
+                    .controlSize(compact ? .small : .large)
                     .help("Jump to the latest line")
-                    .padding(16)
+                    .padding(compact ? 0 : 16)
                 }
             }
     }
