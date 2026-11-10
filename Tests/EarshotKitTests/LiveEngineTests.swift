@@ -99,7 +99,8 @@ struct LiveEngineTests {
     /// The app's whole pipeline on three voices with 0.6 s gaps: live finals, refined per line,
     /// then relabelled from diarizing the full recording.
     @Test func relabellingGivesEachVoiceItsOwnParagraph() async throws {
-        let transcript = try await relabelled(fixture: "quick-switch")
+        let transcript = try await relabelled(
+            fixture: "quick-switch", spoken: ["en-US", "de-DE", "es-ES"])
         #expect(transcript.utterances.count == 3)
         #expect(Set(transcript.utterances.map(\.speaker)).count == 3)
         #expect(transcript.utterances.last?.text.hasPrefix("Estoy") == true)
@@ -125,8 +126,9 @@ struct LiveEngineTests {
     }
 
     /// Live finals refined per line, then each turn from the whole recording's diarization
-    /// transcribed from its own audio: what the app does from Start to Stop.
-    private func relabelled(fixture: String) async throws -> Transcript {
+    /// transcribed from its own audio, each checked against the live words it replaces: what the
+    /// app does from Start to Stop.
+    private func relabelled(fixture: String, spoken: [String] = []) async throws -> Transcript {
         let (finals, client) = try await stream(fixture: fixture, diarize: true)
         var transcript = Transcript()
         var previousEnd = 0.0
@@ -135,8 +137,11 @@ struct LiveEngineTests {
                 transcript: final.transcript, words: final.words, on: .system)
             let end = (final.words.last?.end ?? previousEnd) + Self.refinementTail
             let pcm = try #require(client.audio(from: previousEnd, to: end))
+            let reference = final.words.map {
+                Word(word: $0.word, start: $0.start - previousEnd, end: $0.end - previousEnd)
+            }
             let words = try await Retranscriber.transcribe(
-                pcm: pcm, engine: Self.engine, allowed: []
+                pcm: pcm, engine: Self.engine, allowed: spoken, reference: reference
             ).words
             transcript.refine(
                 applied,
@@ -153,7 +158,8 @@ struct LiveEngineTests {
         let turns = try await Diarizer.diarize(pcm: pcm, engine: Self.engine)
         transcript.relabel(
             try await Retranscriber.transcribe(
-                turns: turns, pcm: pcm, engine: Self.engine, allowed: []))
+                turns: turns, pcm: pcm, engine: Self.engine, allowed: spoken,
+                references: transcript.remoteWords(in: turns)))
         let after = transcript.utterances.map { "\($0.speaker.label): \($0.text)" }
         // Sentences translated while listening are not translated again once relabelled. A turn's
         // own audio is decoded afresh, so some come back with another word, capital, or full

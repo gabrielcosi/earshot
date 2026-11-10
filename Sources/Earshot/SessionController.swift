@@ -327,7 +327,7 @@ final class SessionController {
             let final = transcript.applyFinal(transcript: text, words: words, on: channel)
             persist()
             translationChanged()
-            refine(final, on: channel)
+            refine(final, live: words, on: channel)
         case .error(let message):
             log.error("\(channel.rawValue, privacy: .public) stream: \(message, privacy: .public)")
             if isRecording { problems.report(.engineError(channel)) }
@@ -346,8 +346,9 @@ final class SessionController {
 
     /// Transcribes a final's audio again on its own, from the end of the channel's previous final,
     /// and swaps in the result. A fresh decode recognizes a language switch from the first word,
-    /// which the live stream loses while its decoder is still on the previous language.
-    private func refine(_ final: AppliedFinal, on channel: Channel) {
+    /// which the live stream loses while its decoder is still on the previous language. The
+    /// result is checked against the final's `live` words, which can stay.
+    private func refine(_ final: AppliedFinal, live: [Word], on channel: Channel) {
         guard let end = final.end.map({ $0 + Self.refinementTail }), let client = clients[channel]
         else { return }
         let start = refinedUntil[channel] ?? 0
@@ -356,11 +357,15 @@ final class SessionController {
             return
         }
         let (allowed, contexts) = (spokenLanguages, rules.speechContexts)
+        let reference = live.map {
+            Word(word: $0.word, start: $0.start - start, end: $0.end - start)
+        }
         refinements.append(
             Task {
                 do {
                     let refined = try await Retranscriber.transcribe(
-                        pcm: pcm, engine: endpoint, allowed: allowed, contexts: contexts)
+                        pcm: pcm, engine: endpoint, allowed: allowed, reference: reference,
+                        contexts: contexts)
                     let shifted = refined.words.map {
                         Word(word: $0.word, start: $0.start + start, end: $0.end + start)
                     }

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// What a second pass heard in a clip.
 public struct Retranscription: Sendable, Equatable {
@@ -32,55 +33,99 @@ public struct TranscribedTurn: Sendable, Equatable {
 /// engine's HTTP endpoint. Each request starts a fresh decoder, so a language switch at the start
 /// of the utterance is recognized from its first word.
 public enum Retranscriber {
+    private static let log = Logger(subsystem: "com.gabrielcosi.earshot", category: "retranscriber")
+
     /// Transcribes in the configured languages only: pinned when there is one, otherwise `auto`,
-    /// redone in each configured language when `auto` strays outside them.
+    /// redone in each configured language when `auto` strays outside them. `reference` holds the
+    /// words the result is to replace, timed from the clip's start: it is checked against them
+    /// (`LanguagePolicy.challenge`), and may be what comes back.
     public static func transcribe(
-        pcm: Data, engine: EngineEndpoint, allowed: [String], contexts: [SpeechContext] = []
+        pcm: Data, engine: EngineEndpoint, allowed: [String], reference: [Word] = [],
+        contexts: [SpeechContext] = []
     ) async throws -> Retranscription {
-        if allowed.count == 1 {
-            return Retranscription(
-                words: try await transcribe(
-                    pcm: pcm, engine: engine, language: allowed[0], contexts: contexts
-                ).words)
+        try await transcribe(allowed: allowed, reference: reference) { language in
+            try await transcribe(pcm: pcm, engine: engine, language: language, contexts: contexts)
         }
-        let first = try await transcribe(
-            pcm: pcm, engine: engine, language: Languages.auto, contexts: contexts)
-        if LanguagePolicy.accepts(first.words, reported: first.language, allowed: allowed) {
-            return Retranscription(words: first.words)
-        }
-        let candidates = try await withThrowingTaskGroup(of: (String, [Word]).self) { group in
-            for language in allowed {
-                group.addTask {
-                    (
-                        language,
-                        try await transcribe(
-                            pcm: pcm, engine: engine, language: language, contexts: contexts
-                        ).words
-                    )
-                }
-            }
-            return try await group.reduce(into: [(language: String, words: [Word])]()) {
-                $0.append((language: $1.0, words: $1.1))
-            }
-        }
-        let best = LanguagePolicy.best(of: candidates)
-        let heard = LanguagePolicy.heard(
-            first.language, allowed: allowed, said: first.words, redo: best)
-        return Retranscription(
-            words: heard == nil ? best?.words ?? first.words : first.words, heard: heard)
     }
 
-    /// Each turn transcribed from its own audio, so its words are the turn's speaker's. One
-    /// request at a time: the engine serializes decoding anyway.
+    static func transcribe(
+        allowed: [String], reference: [Word],
+        decode: @escaping @Sendable (String) async throws -> (words: [Word], language: String?)
+    ) async throws -> Retranscription {
+        if allowed.count == 1 {
+            return Retranscription(words: try await decode(allowed[0]).words)
+        }
+        let first = try await decode(Languages.auto)
+        var candidates = [(language: Languages.auto, words: first.words)]
+        var result = first.words
+        if !LanguagePolicy.accepts(first.words, reported: first.language, allowed: allowed) {
+            let redone = try await withThrowingTaskGroup(of: (String, [Word]).self) { group in
+                for language in allowed {
+                    group.addTask { (language, try await decode(language).words) }
+                }
+                return try await group.reduce(into: [(language: String, words: [Word])]()) {
+                    $0.append((language: $1.0, words: $1.1))
+                }
+            }
+            candidates += redone
+            let best = LanguagePolicy.best(of: redone)
+            let heard = LanguagePolicy.heard(
+                first.language, allowed: allowed, said: first.words, redo: best)
+            if let heard { return Retranscription(words: first.words, heard: heard) }
+            result = best?.words ?? first.words
+        }
+        guard
+            let challenge = LanguagePolicy.challenge(
+                result, reference: reference, allowed: allowed)
+        else { return Retranscription(words: result) }
+        // Without its redo the check settles on the candidates at hand: at the end of a
+        // session, one failed request must not cost every turn its relabelling.
+        if let language = challenge.language,
+            !candidates.contains(where: { $0.language == language })
+        {
+            do {
+                candidates.append((language: language, words: try await decode(language).words))
+            } catch {
+                log.error(
+                    "redo in \(language, privacy: .public) failed: \(error, privacy: .public)")
+            }
+        }
+        return Retranscription(
+            words: LanguagePolicy.settle(
+                challenge, result: result, reference: reference,
+                candidates: candidates))
+    }
+
+    /// Each turn transcribed from its own audio, so its words are the turn's speaker's, and
+    /// checked against `references`, the transcript's words in each turn, timed from the
+    /// session's start. One request at a time: the engine serializes decoding anyway.
     public static func transcribe(
         turns: [SpeakerTurn], pcm: Data, engine: EngineEndpoint, allowed: [String],
-        contexts: [SpeechContext] = []
+        references: [[Word]] = [], contexts: [SpeechContext] = []
+    ) async throws -> [TranscribedTurn] {
+        try await transcribe(turns: turns, references: references, allowed: allowed) {
+            turn, language in
+            try await transcribe(
+                pcm: PCM.slice(pcm, from: turn.start, to: turn.end), engine: engine,
+                language: language, contexts: contexts)
+        }
+    }
+
+    static func transcribe(
+        turns: [SpeakerTurn], references: [[Word]], allowed: [String],
+        decode:
+            @escaping @Sendable (SpeakerTurn, String) async throws -> (
+                words: [Word], language: String?
+            )
     ) async throws -> [TranscribedTurn] {
         var transcribed: [TranscribedTurn] = []
-        for turn in turns {
-            let result = try await transcribe(
-                pcm: PCM.slice(pcm, from: turn.start, to: turn.end), engine: engine,
-                allowed: allowed, contexts: contexts)
+        for (index, turn) in turns.enumerated() {
+            let reference = (index < references.count ? references[index] : []).map {
+                Word(word: $0.word, start: $0.start - turn.start, end: $0.end - turn.start)
+            }
+            let result = try await transcribe(allowed: allowed, reference: reference) {
+                try await decode(turn, $0)
+            }
             transcribed.append(
                 TranscribedTurn(
                     turn: turn,

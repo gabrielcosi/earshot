@@ -32,7 +32,9 @@ public enum LanguagePolicy {
 
     /// Measured on clips forced into English or German (docs/behaviour.md, Engine: language):
     /// speech in another language comes back empty or as its own words, and reads as the forced
-    /// language at 0.00-0.09; English and German phrases read as theirs at 0.80 and up.
+    /// language at 0.00-0.09; English and German phrases read as theirs at 0.80 and up. English
+    /// and German cross over more often: on real meetings German forced into English read as
+    /// English in 3 of 15 clips, English forced into German as German in 9 of 98.
     static let forcedAgreement = 0.5
 
     /// Measured with the same agreement: two-word replies read low in their own language as often

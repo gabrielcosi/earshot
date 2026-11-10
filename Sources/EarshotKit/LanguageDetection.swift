@@ -42,7 +42,7 @@ public enum LanguageDetection {
         }
     }
 
-    private static func hypothesis(_ text: String, minimum: Double, among constraint: [NLLanguage]?)
+    static func hypothesis(_ text: String, minimum: Double, among constraint: [NLLanguage]?)
         -> NLLanguage?
     {
         let recognizer = NLLanguageRecognizer()
