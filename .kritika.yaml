@@ -43,6 +43,7 @@ review:
           expr: pr.lines > 1500
 confidence:
   model: bifrost/anthropic/claude-sonnet-5-5
+  fallback: bifrost/opencode/glm-5.3-flash
   threshold: 4
   gate:
     when:
